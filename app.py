@@ -284,20 +284,22 @@ elif app_mode == " 模板設計師":
         with st.container():
             st.subheader(" 編輯模板")
 
-            # 如果 session_state 沒有 edit_target 或不存在於 db_templates，使用第一個模板
+            template_keys = list(db_templates.keys())
+            if not template_keys:
+                st.warning("資料庫中沒有模板可編輯，請先建立模板！")
+                st.stop()
+
+            # 設定預設選擇第一個模板
             if "edit_target" not in st.session_state or st.session_state.edit_target not in db_templates:
-                st.session_state.edit_target = list(db_templates.keys())[0]
+                st.session_state.edit_target = template_keys[0]
 
             edit_target = st.selectbox(
                 "請選擇要修改的模板：",
-                list(db_templates.keys()),
-                index=list(db_templates.keys()).index(st.session_state.edit_target)
+                template_keys,
+                index=template_keys.index(st.session_state.edit_target)
             )
 
-            # 更新 session_state
             st.session_state.edit_target = edit_target
-
-            # 安全取值，避免 KeyError
             current_content = db_templates.get(edit_target, "")
 
             with st.form("edit_form"):

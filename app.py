@@ -189,70 +189,86 @@ elif app_mode == " 模板設計師":
     st.header(" AI 模板設計中心")
     st.info("在此模式下，您可以新增或修改 AI 的思考邏輯 (Prompt)，客製化不同科別的需求。")
 
-    # 1. 讀取現有模板
     db_templates = get_all_templates()
     template_list = list(db_templates.keys())
 
-    # 修改：Tab 1 名稱改為「模板庫管理」
     tab_library, tab_create = st.tabs([" 模板庫管理", " 建立新模板"])
 
-    # --- Tab 1: 模板庫管理 (含多格式匯出功能) ---
+    # =======================
+    # Tab 1：模板庫管理
+    # =======================
     with tab_library:
-        if not template_list:
-            st.warning("目前資料庫中沒有任何模板。")
-        else:
-            # 1. 顯示總覽
-            st.subheader(" 現有模板總覽")
-            st.write(f"目前系統中共有 **{len(template_list)}** 個自定義模板：")
-            
-            # 將模板清單製作成 DataFrame 顯示
-            df_templates = pd.DataFrame(list(db_templates.items()), columns=["模板名稱", "System Prompt 內容"])
-            st.dataframe(df_templates, use_container_width=True, hide_index=True)
-            
-            # === 新增功能：多格式匯出 ===
-            st.markdown("####  匯出模板庫")
-            export_col1, export_col2 = st.columns([1, 1])
-            
-            with export_col1:
+
+        # ---------- 匯出模板 ----------
+        with st.container():
+            st.markdown("#### 匯出模板")
+
+            export_scope = st.radio(
+                "匯出範圍：",
+                ["整個模板庫", "單一模板"],
+                horizontal=True
+            )
+
+            export_templates = db_templates
+            export_label_suffix = "all"
+
+            if export_scope == "單一模板":
+                selected_export_template = st.selectbox(
+                    "選擇要匯出的模板：",
+                    template_list
+                )
+                export_templates = {
+                    selected_export_template: db_templates[selected_export_template]
+                }
+                export_label_suffix = selected_export_template
+
+            col1, col2 = st.columns(2)
+
+            with col1:
                 export_format = st.selectbox(
-                    "選擇匯出格式：", 
+                    "選擇匯出格式：",
                     ["CSV (Excel)", "JSON (程式用)", "Markdown (文件)", "TXT (純文字)"]
                 )
-            
-            with export_col2:
-                # 根據選擇生成不同格式的資料
+
+            with col2:
                 file_data = None
-                file_name = "templates_export"
+                file_name = f"templates_export_{export_label_suffix}"
                 mime_type = "text/plain"
 
                 if export_format == "CSV (Excel)":
-                    file_data = df_templates.to_csv(index=False).encode('utf-8-sig') # utf-8-sig 防止 Excel 亂碼
+                    df_export = pd.DataFrame(
+                        export_templates.items(),
+                        columns=["模板名稱", "System Prompt 內容"]
+                    )
+                    file_data = df_export.to_csv(index=False).encode("utf-8-sig")
                     file_name += ".csv"
                     mime_type = "text/csv"
-                
+
                 elif export_format == "JSON (程式用)":
-                    file_data = json.dumps(db_templates, indent=4, ensure_ascii=False).encode('utf-8')
+                    file_data = json.dumps(
+                        export_templates,
+                        indent=4,
+                        ensure_ascii=False
+                    ).encode("utf-8")
                     file_name += ".json"
                     mime_type = "application/json"
-                
+
                 elif export_format == "Markdown (文件)":
-                    md_text = "# AI 醫療摘要模板庫\n\n"
-                    for name, content in db_templates.items():
+                    md_text = "# AI 醫療摘要模板\n\n"
+                    for name, content in export_templates.items():
                         md_text += f"## {name}\n```text\n{content}\n```\n\n---\n\n"
-                    file_data = md_text.encode('utf-8')
+                    file_data = md_text.encode("utf-8")
                     file_name += ".md"
                     mime_type = "text/markdown"
 
                 elif export_format == "TXT (純文字)":
-                    txt_text = "AI 醫療摘要模板庫\n====================\n\n"
-                    for name, content in db_templates.items():
+                    txt_text = "AI 醫療摘要模板\n====================\n\n"
+                    for name, content in export_templates.items():
                         txt_text += f"模板名稱：{name}\n內容：\n{content}\n\n--------------------\n\n"
-                    file_data = txt_text.encode('utf-8')
+                    file_data = txt_text.encode("utf-8")
                     file_name += ".txt"
                     mime_type = "text/plain"
 
-                # 為了版面整齊，加個空行
-                st.write("") 
                 if file_data:
                     st.download_button(
                         label=f"⬇ 下載 {export_format}",
@@ -261,32 +277,36 @@ elif app_mode == " 模板設計師":
                         mime=mime_type,
                         use_container_width=True
                     )
-            # ==============================
 
-            st.divider()
+        st.divider()
 
-            # 2. 選擇修改
+        # ---------- 編輯模板 ----------
+        with st.container():
             st.subheader(" 編輯模板")
-            
-            col_sel, col_space = st.columns([1, 1])
-            with col_sel:
-                edit_target = st.selectbox("請選擇要修改的模板：", template_list)
-            
-            # 讀取內容
+
+            edit_target = st.selectbox(
+                "請選擇要修改的模板：",
+                template_list
+            )
+
             current_content = db_templates[edit_target]
-            
-            # 編輯區塊
+
             with st.form("edit_form"):
                 st.write(f"**正在編輯：** `{edit_target}`")
-                new_content = st.text_area("模板內容 (System Prompt)", value=current_content, height=450)
-                
+                new_content = st.text_area(
+                    "模板內容 (System Prompt)",
+                    value=current_content,
+                    height=450
+                )
+
                 if st.form_submit_button(" 儲存修改", type="primary"):
                     if update_template(edit_target, new_content):
                         st.success(f"模板「{edit_target}」已成功更新！")
-                        st.cache_data.clear() # 清除快取以顯示最新內容
-                        st.rerun() # 重新整理頁面
+                        st.cache_data.clear()
+                        st.rerun()
                     else:
                         st.error("更新失敗，請檢查資料庫連線。")
+
 
     # --- Tab 2: 建立新模板 (保持原樣) ---
     with tab_create:

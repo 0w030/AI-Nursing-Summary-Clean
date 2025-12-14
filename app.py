@@ -30,15 +30,6 @@ DB_PASSWORD = st.secrets["database"]["password"]
 # 讀取 GROQ API Key
 GROQ_API_KEY = st.secrets["groq"]["api_key"]
 
-st.title("Secrets 測試頁面")
-
-database_secrets = st.secrets.get("database", {})
-groq_key = st.secrets.get("groq", {}).get("api_key", "")
-
-st.write("Database Keys:", list(database_secrets.keys()))
-st.write("Database Host:", database_secrets.get("host", "未設定"))
-st.write("GROQ API Key 是否存在？", bool(groq_key))
-
 
 # ==========================================
 # 輔助函數

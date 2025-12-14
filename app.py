@@ -21,6 +21,15 @@ st.set_page_config(page_title="AI 醫療模板系統", layout="wide", page_icon=
 selected_info = None
 target_patient_id = None
 earliest_dt = None
+DB_HOST = st.secrets["database"]["host"]
+DB_PORT = st.secrets["database"]["port"]
+DB_NAME = st.secrets["database"]["name"]
+DB_USER = st.secrets["database"]["user"]
+DB_PASSWORD = st.secrets["database"]["password"]
+
+# 讀取 GROQ API Key
+GROQ_API_KEY = st.secrets["groq"]["api_key"]
+
 
 # ==========================================
 # 輔助函數

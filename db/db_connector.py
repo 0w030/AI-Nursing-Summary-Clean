@@ -1,11 +1,7 @@
 # /db/db_connector.py
 
-import os
 import psycopg2
-from dotenv import load_dotenv
-
-# 載入環境變數
-load_dotenv()
+import streamlit as st
 
 def get_db_connection():
     """
@@ -13,13 +9,13 @@ def get_db_connection():
     如果成功，回傳連線物件；如果失敗，回傳 None 並印出錯誤。
     """
     try:
-        # 嘗試連線
+        # 嘗試連線，改用 st.secrets
         conn = psycopg2.connect(
-            host=os.getenv("DB_HOST"),
-            port=os.getenv("DB_PORT"),
-            database=os.getenv("DB_NAME"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD")
+            host=st.secrets["database"]["host"],
+            port=st.secrets["database"]["port"],
+            database=st.secrets["database"]["name"],
+            user=st.secrets["database"]["user"],
+            password=st.secrets["database"]["password"]
         )
         return conn
     except psycopg2.Error as e:
@@ -51,8 +47,4 @@ if __name__ == '__main__':
             print("--- 連線測試結束，連線已關閉 ---")
     else:
         print("❌ 連線失敗。")
-        print("請檢查您的 .env 檔案內容：")
-        print(f"Host: {os.getenv('DB_HOST')}")
-        print(f"Port: {os.getenv('DB_PORT')}")
-        print(f"User: {os.getenv('DB_USER')}")
-        print("Password: (已隱藏)")
+        print("請檢查您的 Streamlit Secrets 設定")

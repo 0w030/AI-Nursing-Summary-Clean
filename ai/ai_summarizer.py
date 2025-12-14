@@ -1,6 +1,7 @@
 # /ai/ai_summarizer.py
 
 import os
+import streamlit as st
 from openai import OpenAI
 from dotenv import load_dotenv
 # 引入剛剛寫好的模板服務
@@ -91,9 +92,9 @@ def generate_nursing_summary(patient_id, patient_data, template_name, custom_sys
 
     # === 6. 呼叫 AI API (Groq) ===
     client = OpenAI(
-        api_key=os.getenv("GROQ_API_KEY"), 
-        base_url="https://api.groq.com/openai/v1"
-    )
+    api_key=st.secrets["groq"]["api_key"], 
+    base_url="https://api.groq.com/openai/v1"
+)
     
     try:
         response = client.chat.completions.create(

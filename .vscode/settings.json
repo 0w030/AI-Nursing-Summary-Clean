@@ -10,6 +10,16 @@
             "username": "postgres",
             "name": "Railway-Summarizer-DB",
             "password": "TWIjLcLxInGJXJoKhZwejbdRuOpKQZAU"
+        },
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "switchback.proxy.rlwy.net",
+            "port": 20392,
+            "driver": "PostgreSQL",
+            "name": "333",
+            "database": "railway",
+            "username": "postgres"
         }
     ]
 }

@@ -6,6 +6,7 @@ import pandas as pd
 import json
 from dotenv import load_dotenv
 from datetime import datetime, time
+from feedback_component import show_feedback_ui
 
 # 引入後端模組
 from db.patient_service import get_patient_full_history, get_all_patients_overview
@@ -14,6 +15,12 @@ from ai.ai_summarizer import generate_nursing_summary
 
 # --- 設定網頁 ---
 st.set_page_config(page_title="AI 醫療模板系統", layout="wide", page_icon="")
+
+
+# ===== 全域預設（避免 NameError）=====
+selected_info = None
+target_patient_id = None
+earliest_dt = None
 
 # ==========================================
 # 輔助函數
@@ -59,6 +66,15 @@ if app_mode == " 摘要生成器":
         selected_info = next((p for p in patients_list if p['label'] == selected_label), None)
         target_patient_id = selected_info['病歷號']
         st.success(f"已選定：{target_patient_id}")
+        # 解析病患最早就診時間（給時間篩選用）
+        
+earliest_dt = None
+
+if selected_info and selected_info.get("最早紀錄"):
+    raw_time = selected_info["最早紀錄"]
+    earliest_dt = datetime.strptime(raw_time, "%Y%m%d%H%M%S")
+
+
 
     # 2. 選擇模板
     st.subheader("2. 選擇摘要模板")
@@ -98,16 +114,32 @@ if app_mode == " 摘要生成器":
         if cols[i % 3].checkbox(option, value=is_checked):
             selected_focus_areas.append(option)
 
-    # 5. 時間篩選
+    # 5. 時間範圍篩選
     with st.expander(" 時間範圍篩選 (選填)"):
         use_time_filter = st.checkbox("啟用篩選")
+
         start_dt_str = None
         end_dt_str = None
-        if use_time_filter:
-            c1, c2 = st.columns(2)
-            d1 = c1.date_input("開始日期", datetime.now())
-            t1 = c2.time_input("開始時間", time(0,0))
-            start_dt_str = f"{d1.year}{d1.month:02d}{d1.day:02d}{t1.hour:02d}{t1.minute:02d}00"
+
+    if use_time_filter:
+        # 預設值邏輯
+        if target_patient_id and earliest_dt:
+            default_date = earliest_dt.date()
+            default_time = earliest_dt.time()
+        else:
+            default_date = datetime.now().date()
+            default_time = time(0, 0)
+
+        c1, c2 = st.columns(2)
+        d1 = c1.date_input("開始日期", default_date)
+        t1 = c2.time_input("開始時間", default_time)
+
+        start_dt_str = (
+            f"{d1.year}{d1.month:02d}{d1.day:02d}"
+            f"{t1.hour:02d}{t1.minute:02d}00"
+        )
+
+
 
     # 6. 執行按鈕
     if target_patient_id:
@@ -146,6 +178,9 @@ if app_mode == " 摘要生成器":
                 st.markdown("###  生成結果")
                 st.markdown("---")
                 st.markdown(summary)
+                
+                show_feedback_ui(target_patient_id,template_names)
+                
 
 # ==============================================================================
 # 模式 B：模板設計師 (管理後台)

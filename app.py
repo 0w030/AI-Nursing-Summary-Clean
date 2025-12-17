@@ -30,6 +30,14 @@ DB_PASSWORD = st.secrets["database"]["password"]
 # 讀取 GROQ API Key
 GROQ_API_KEY = st.secrets["groq"]["api_key"]
 
+if target_patient_id:
+        if st.button(" 開始生成摘要", type="primary", use_container_width=True):
+            load_dotenv()
+            if not st.secrets["groq"]["api_key"]:
+                st.error("未設定 API Key")
+                st.stop()
+                
+
 
 # ==========================================
 # 輔助函數

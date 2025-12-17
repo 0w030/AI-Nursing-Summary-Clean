@@ -64,8 +64,6 @@ with st.sidebar:
 if app_mode == " 摘要生成器":
     st.header(" AI 急診病程摘要生成")
     
-    with st.sidebar:
-        st.subheader("🔍 Secrets 除錯（僅開發用）")
 
     try:
         groq_key = st.secrets["groq"]["api_key"]

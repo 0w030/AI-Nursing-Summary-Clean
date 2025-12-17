@@ -94,7 +94,7 @@ def generate_nursing_summary(patient_id, patient_data, template_name, custom_sys
     client = OpenAI(
     api_key=st.secrets["groq"]["api_key"], 
     base_url="https://api.groq.com/openai/v1"
-)
+    )
     
     try:
         response = client.chat.completions.create(

@@ -154,7 +154,7 @@ if selected_info and selected_info.get("最早紀錄"):
     if target_patient_id:
         if st.button(" 開始生成摘要", type="primary", use_container_width=True):
             load_dotenv()
-            if not os.getenv("GROQ_API_KEY"):
+            if not st.secrets["groq"]["api_key"]:
                 st.error("未設定 API Key")
                 st.stop()
                 

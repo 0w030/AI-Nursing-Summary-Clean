@@ -53,7 +53,7 @@ def main():
     # 2. 呼叫 AI
     if os.getenv("GROQ_API_KEY"):
         print("\n2. 正在呼叫 Groq AI 生成摘要...")
-        summary = generate_nursing_summary(TEST_PATIENT_ID, patient_data)
+        summary = generate_nursing_summary(TEST_PATIENT_ID, patient_data,template_name="emergency_summary")
         
         print("\n" + "="*40)
         print("       急診病程摘要 (AI Generated)")

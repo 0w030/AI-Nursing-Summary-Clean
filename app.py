@@ -30,25 +30,6 @@ DB_PASSWORD = st.secrets["database"]["password"]
 # 讀取 GROQ API Key
 GROQ_API_KEY = st.secrets["groq"]["api_key"]
 
-with st.sidebar:
-    st.subheader("🔍 Secrets 除錯（僅開發用）")
-
-    try:
-        groq_key = st.secrets["groq"]["api_key"]
-
-        if groq_key:
-            st.success("GROQ_API_KEY 已讀取")
-            st.write("API Key 長度：", len(groq_key))
-            st.write(
-                "API Key 預覽：",
-                f"{groq_key[:4]}****{groq_key[-4:]}"
-            )
-        else:
-            st.error("GROQ_API_KEY 為空值")
-
-    except KeyError as e:
-        st.error("❌ 無法從 st.secrets 讀取 GROQ_API_KEY")
-        st.code(str(e))
 
 # ==========================================
 # 輔助函數
@@ -82,6 +63,26 @@ with st.sidebar:
 # ==============================================================================
 if app_mode == " 摘要生成器":
     st.header(" AI 急診病程摘要生成")
+    
+    with st.sidebar:
+        st.subheader("🔍 Secrets 除錯（僅開發用）")
+
+    try:
+        groq_key = st.secrets["groq"]["api_key"]
+
+        if groq_key:
+            st.success("GROQ_API_KEY 已讀取")
+            st.write("API Key 長度：", len(groq_key))
+            st.write(
+                "API Key 預覽：",
+                f"{groq_key[:4]}****{groq_key[-4:]}"
+            )
+        else:
+            st.error("GROQ_API_KEY 為空值")
+
+    except KeyError as e:
+        st.error("❌ 無法從 st.secrets 讀取 GROQ_API_KEY")
+        st.code(str(e))
     
     # 1. 選擇病患
     st.subheader("1. 選擇病患")

@@ -29,6 +29,8 @@ DB_PASSWORD = st.secrets["database"]["password"]
 
 # 讀取 GROQ API Key
 GROQ_API_KEY = st.secrets["groq"]["api_key"]
+TAB_LIBRARY = "模板庫管理"
+TAB_CREATE = "建立新模板"
 
 
 # ==========================================
@@ -195,18 +197,31 @@ if selected_info and selected_info.get("最早紀錄"):
 # 模式 B：模板設計師 (管理後台)
 # ==============================================================================
 elif app_mode == " 模板設計師":
+    
+    # 記住目前所在的 tab
+    if "template_tab" not in st.session_state:
+        st.session_state.template_tab = TAB_LIBRARY
+ 
+
+    
     st.header(" AI 模板設計中心")
     st.info("在此模式下，您可以新增或修改 AI 的思考邏輯 (Prompt)，客製化不同科別的需求。")
 
     db_templates = get_all_templates()
     template_list = list(db_templates.keys())
 
-    tab_library, tab_create = st.tabs([" 模板庫管理", " 建立新模板"])
+    tab = st.radio(
+    "功能頁籤",
+    [TAB_LIBRARY, TAB_CREATE],
+    horizontal=True,
+    key="template_tab"
+    )
+
 
     # =======================
     # Tab 1：模板庫管理
     # =======================
-    with tab_library:
+    if st.session_state.template_tab == TAB_LIBRARY:
 
         # ---------- 匯出模板 ----------
         with st.container():
@@ -329,7 +344,8 @@ elif app_mode == " 模板設計師":
 
 
     # --- Tab 2: 建立新模板 (保持原樣) ---
-    with tab_create:
+    elif st.session_state.template_tab == TAB_CREATE:
+        
         st.markdown("####  Prompt 快速產生器")
         st.caption("選擇以下參數，系統會即時生成專業的 System Prompt 草稿。")
         

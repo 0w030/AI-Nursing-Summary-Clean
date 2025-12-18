@@ -245,6 +245,12 @@ elif app_mode == " 模板設計師":
                     selected_export_template: db_templates[selected_export_template]
                 }
                 export_label_suffix = selected_export_template
+                
+                with st.expander("模板預覽", expanded=True):
+                    st.code(
+                        db_templates[selected_export_template],
+                        language="text",
+                    )
 
             col1, col2 = st.columns(2)
 

@@ -16,6 +16,16 @@ from ai.ai_summarizer import generate_nursing_summary
 # --- 設定網頁 ---
 st.set_page_config(page_title="AI 醫療模板系統", layout="wide", page_icon="")
 
+# ===== session_state 初始化（新增）=====
+if "preview_prompt" not in st.session_state:
+    st.session_state.preview_prompt = ""
+
+if "last_template_name" not in st.session_state:
+    st.session_state.last_template_name = None
+
+if "last_style_option" not in st.session_state:
+    st.session_state.last_style_option = None
+
 
 # ===== 全域預設（避免 NameError）=====
 selected_info = None
@@ -32,12 +42,12 @@ GROQ_API_KEY = st.secrets["groq"]["api_key"]
 TAB_LIBRARY = "模板庫管理"
 TAB_CREATE = "建立新模板"
 
-
 # ==========================================
 # 輔助函數
 # ==========================================
 def format_time_str(raw_time):
-    if not raw_time or len(str(raw_time)) < 12: return raw_time
+    if not raw_time or len(str(raw_time)) < 12:
+        return raw_time
     s = str(raw_time)
     return f"{s[:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
 
@@ -77,19 +87,16 @@ if app_mode == " 摘要生成器":
         selected_info = next((p for p in patients_list if p['label'] == selected_label), None)
         target_patient_id = selected_info['病歷號']
         st.success(f"已選定：{target_patient_id}")
-        # 解析病患最早就診時間（給時間篩選用）
-        
+
 earliest_dt = None
 
 if selected_info and selected_info.get("最早紀錄"):
     raw_time = selected_info["最早紀錄"]
     earliest_dt = datetime.strptime(raw_time, "%Y%m%d%H%M%S")
 
-
-
     # 2. 選擇模板
     st.subheader("2. 選擇摘要模板")
-    db_templates = get_all_templates() 
+    db_templates = get_all_templates()
     template_names = list(db_templates.keys())
     
     if not template_names:
@@ -97,62 +104,72 @@ if selected_info and selected_info.get("最早紀錄"):
         st.stop()
         
     selected_template_name = st.selectbox("請選擇適用情境：", template_names, index=0)
-    
+
     # 3. 呈現風格
     style_option = st.radio("呈現風格：", ["列點式 (Bullet Points)", "短文式 (Narrative)"], horizontal=True)
 
-    # 4. 關注點 (修改為 Checkbox 清單 + 智慧預設)
-    st.subheader("3. 重點關注項目")
+    # ===== 模板或呈現風格變更時，自動刷新 Prompt =====
+    if (
+        selected_template_name != st.session_state.last_template_name
+        or style_option != st.session_state.last_style_option
+    ):
+        base_prompt = db_templates[selected_template_name]
+
+        style_instruction = (
+            "\n\n【格式要求】：請整合為一篇流暢的短文，禁止使用列點。"
+            if style_option == "短文式 (Narrative)"
+            else "\n\n【格式要求】：請務必使用列點方式呈現，保持條理。"
+        )
+
+        st.session_state.preview_prompt = base_prompt + style_instruction
+        st.session_state.last_template_name = selected_template_name
+        st.session_state.last_style_option = style_option
+
+    # ===== Prompt 預覽 / 修改（新增）=====
+    st.subheader("3. Prompt 預覽與編輯")
+    edited_prompt = st.text_area(
+        "即將送入 AI 的 System Prompt（可直接修改）",
+        value=st.session_state.preview_prompt,
+        height=300
+    )
+    st.session_state.preview_prompt = edited_prompt
+
+    # 4. 關注點
+    st.subheader("4. 重點關注項目")
     st.write("請勾選 **重點關注項目** (AI 將加強分析)：")
     
     focus_options = ["生命徵象趨勢", "檢驗報告異常值", "護理處置經過", "病患主訴", "管路狀況", "意識狀態(GCS)"]
     
-    # === 智慧預設勾選 (根據模板名稱自動判斷) ===
     default_focus = []
-    if "會診" in selected_template_name: 
+    if "會診" in selected_template_name:
         default_focus = ["檢驗報告異常值", "生命徵象趨勢"]
-    elif "交班" in selected_template_name: 
+    elif "交班" in selected_template_name:
         default_focus = ["護理處置經過", "意識狀態(GCS)"]
-    elif "出院" in selected_template_name: 
+    elif "出院" in selected_template_name:
         default_focus = ["護理處置經過", "生命徵象趨勢"]
     
     selected_focus_areas = []
-    # 使用 3 欄排列，讓版面更整齊
     cols = st.columns(3)
     for i, option in enumerate(focus_options):
-        # 檢查該選項是否在預設清單中
-        is_checked = option in default_focus
-        if cols[i % 3].checkbox(option, value=is_checked):
+        if cols[i % 3].checkbox(option, value=option in default_focus):
             selected_focus_areas.append(option)
 
     # 5. 時間範圍篩選
     with st.expander(" 時間範圍篩選 (選填)"):
         use_time_filter = st.checkbox("啟用篩選")
-
         start_dt_str = None
-        end_dt_str = None
 
     if use_time_filter:
-        # 預設值邏輯
-        if target_patient_id and earliest_dt:
-            default_date = earliest_dt.date()
-            default_time = earliest_dt.time()
-        else:
-            default_date = datetime.now().date()
-            default_time = time(0, 0)
+        default_date = earliest_dt.date() if earliest_dt else datetime.now().date()
+        default_time = earliest_dt.time() if earliest_dt else time(0, 0)
 
         c1, c2 = st.columns(2)
         d1 = c1.date_input("開始日期", default_date)
         t1 = c2.time_input("開始時間", default_time)
 
-        start_dt_str = (
-            f"{d1.year}{d1.month:02d}{d1.day:02d}"
-            f"{t1.hour:02d}{t1.minute:02d}00"
-        )
+        start_dt_str = f"{d1.year}{d1.month:02d}{d1.day:02d}{t1.hour:02d}{t1.minute:02d}00"
 
-
-
-    # 6. 執行按鈕
+    # 6. 執行按鈕（使用編輯後 Prompt）
     if target_patient_id:
         if st.button(" 開始生成摘要", type="primary", use_container_width=True):
             load_dotenv()
@@ -161,36 +178,22 @@ if selected_info and selected_info.get("最早紀錄"):
                 st.stop()
                 
             with st.spinner("正在分析資料並撰寫摘要..."):
-                # 撈資料
                 p_data = get_patient_full_history(target_patient_id, start_time=start_dt_str)
-                
-                # 準備 Prompt 附加指令
-                style_instruction = ""
-                if style_option == "短文式 (Narrative)":
-                    style_instruction = "\n\n**【格式要求】**：請整合為一篇流暢的短文，禁止使用列點。"
-                else:
-                    style_instruction = "\n\n**【格式要求】**：請務必使用列點方式呈現，保持條理。"
-                
-                # 從資料庫取出原始模板內容
-                base_prompt = db_templates[selected_template_name]
-                
-                # 組合最終 Prompt
-                final_system_prompt = base_prompt + style_instruction
 
-                # 呼叫 AI
                 summary = generate_nursing_summary(
-                    target_patient_id, 
-                    p_data, 
+                    target_patient_id,
+                    p_data,
                     selected_template_name,
-                    custom_system_prompt=final_system_prompt,
+                    custom_system_prompt=st.session_state.preview_prompt,
                     focus_areas=selected_focus_areas
                 )
-                
+
                 st.markdown("###  生成結果")
                 st.markdown("---")
                 st.markdown(summary)
-                
-                show_feedback_ui(target_patient_id,template_names)
+
+                show_feedback_ui(target_patient_id, template_names)
+
                 
 
 # ==============================================================================

@@ -30,6 +30,16 @@
             "name": "23445",
             "database": "railway",
             "username": "postgres"
+        },
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "tramway.proxy.rlwy.net",
+            "port": 18467,
+            "driver": "PostgreSQL",
+            "name": "2355",
+            "database": "railway",
+            "username": "postgres"
         }
     ]
 }

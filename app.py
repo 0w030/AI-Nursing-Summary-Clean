@@ -6,7 +6,7 @@ import pandas as pd
 import json
 from dotenv import load_dotenv
 from datetime import datetime, time
-from feedback_component import show_feedback_ui
+# from feedback_component import show_feedback_ui
 
 # 引入後端模組
 from db.patient_service import get_patient_full_history, get_all_patients_overview
@@ -94,6 +94,32 @@ if selected_info and selected_info.get("最早紀錄"):
     raw_time = selected_info["最早紀錄"]
     earliest_dt = datetime.strptime(raw_time, "%Y%m%d%H%M%S")
 
+    # --- 新增功能：資料表層級勾選 (1.5) ---
+    st.subheader("1.5 選擇資料來源範圍")
+    # 定義對應 patient_service.py 的鍵值
+    TABLE_STRUCTURE = {
+        "臨床紀錄 (Clinical)": {
+            "護理紀錄 (ENSDATA)": "nursing",
+            "生理監測 (Vitals)": "vitals"
+        },
+        "實驗室檢查 (Labs)": {
+            "檢驗報告 (Lab Data)": "labs"
+        }
+    }
+    
+    selected_table_keys = []
+    with st.expander("📂 勾選欲分析的資料表 (預設全選)", expanded=True):
+        for category, sub_tables in TABLE_STRUCTURE.items():
+            st.markdown(f"**{category}**")
+            cols = st.columns(len(sub_tables))
+            for i, (label, table_key) in enumerate(sub_tables.items()):
+                # 使用 checkbox 讓使用者挑選，預設為 True
+                if cols[i].checkbox(label, value=True, key=f"src_{table_key}"):
+                    selected_table_keys.append(table_key)
+    
+    if not selected_table_keys:
+        st.warning("⚠️ 請至少勾選一個資料來源。")
+
     # 2. 選擇模板
     st.subheader("2. 選擇摘要模板")
     db_templates = get_all_templates()
@@ -125,7 +151,7 @@ if selected_info and selected_info.get("最早紀錄"):
         st.session_state.last_template_name = selected_template_name
         st.session_state.last_style_option = style_option
 
-    # ===== Prompt 預覽 / 修改（新增）=====
+    # ===== Prompt 預覽 / 修改 =====
     st.subheader("3. Prompt 預覽與編輯")
     edited_prompt = st.text_area(
         "即將送入 AI 的 System Prompt（可直接修改）",
@@ -169,7 +195,7 @@ if selected_info and selected_info.get("最早紀錄"):
 
         start_dt_str = f"{d1.year}{d1.month:02d}{d1.day:02d}{t1.hour:02d}{t1.minute:02d}00"
 
-    # 6. 執行按鈕（使用編輯後 Prompt）
+    # 6. 執行按鈕（加入選取的 tables 參數）
     if target_patient_id:
         if st.button(" 開始生成摘要", type="primary", use_container_width=True):
             load_dotenv()
@@ -177,8 +203,17 @@ if selected_info and selected_info.get("最早紀錄"):
                 st.error("未設定 API Key")
                 st.stop()
                 
+            if not selected_table_keys:
+                st.error("請至少選擇一個資料來源。")
+                st.stop()
+                
             with st.spinner("正在分析資料並撰寫摘要..."):
-                p_data = get_patient_full_history(target_patient_id, start_time=start_dt_str)
+                # 修改：呼叫 get_patient_full_history 時傳入 tables 參數
+                p_data = get_patient_full_history(
+                    target_patient_id, 
+                    start_time=start_dt_str, 
+                    tables=selected_table_keys
+                )
 
                 summary = generate_nursing_summary(
                     target_patient_id,
@@ -192,9 +227,7 @@ if selected_info and selected_info.get("最早紀錄"):
                 st.markdown("---")
                 st.markdown(summary)
 
-                show_feedback_ui(target_patient_id, template_names)
-
-                
+                # show_feedback_ui(target_patient_id, template_names)
 
 # ==============================================================================
 # 模式 B：模板設計師 (管理後台)
@@ -351,8 +384,7 @@ elif app_mode == " 模板設計師":
                     else:
                         st.error("更新失敗，請檢查資料庫連線。")
 
-
-    # --- Tab 2: 建立新模板 (保持原樣) ---
+# --- Tab 2: 建立新模板 (保持原樣) ---
     elif st.session_state.template_tab == TAB_CREATE:
         
         st.markdown("####  Prompt 快速產生器")
@@ -524,3 +556,4 @@ elif app_mode == " 模板設計師":
                     st.error("建立失敗 (名稱可能重複)。")
             else:
                 st.warning("名稱與內容不得為空。")
+    

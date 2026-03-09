@@ -49,7 +49,7 @@ COLUMN_MAPPING = {
     # 3. DB_ADM_LABDATA_ER (急診檢驗明細)
     # ==========================================
     "CHITEMNO": "項目代碼",
-    "CHHEAD": "項目名稱",
+    "CHHEAD": "項目",
     "CHVAL": "結果值",
     "CHUNIT": "單位",
     "CHCOMMT": "註記",
@@ -89,6 +89,44 @@ COLUMN_MAPPING = {
     "PUPIL_R": "右眼瞳孔",
     "ENESKIND": "檢傷級數"
 }
+
+# 定義數值對照表 (Value Mapping)
+VALUE_MAPPING = {
+    "ETREGION": {
+        "1": "腋溫", "2": "耳溫", "3": "口溫", "4": "肛溫", "5": "額溫"
+    },
+    "CHSTAT": {
+        "11": "未收件",
+        "30": "檢驗中",
+        "50": "初步報告",
+        "60": "報告確認",
+        "70": "報告修改",
+        "DC": "DC(取消)"
+    },
+    "ENESKIND": {
+        "B": "留觀評估",
+        "N": "檢傷評估"
+    },
+    "SOURCETYPE": {
+        "O": "門診",
+        "I": "住院",
+        "E": "急診"
+    }
+}
+
+# 新增數值翻譯函式
+def translate_value(column_name, value):
+    """將特定欄位的代碼轉換為中文意義"""
+    if value is None:
+        return "None"
+    
+    col = str(column_name).strip().upper()
+    val = str(value).strip()
+    
+    # 檢查該欄位是否有定義對照表
+    if col in VALUE_MAPPING:
+        return VALUE_MAPPING[col].get(val, value) # 找不到則回傳原值
+    return value
 
 def get_chinese_name(column_name):
     """

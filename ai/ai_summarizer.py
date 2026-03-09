@@ -4,96 +4,115 @@ import os
 import streamlit as st
 from openai import OpenAI
 from dotenv import load_dotenv
-# 引入剛剛寫好的模板服務
 from db.template_service import get_all_templates
+# 引入翻譯官：包含標籤翻譯(get_chinese_name) 與 數值翻譯(translate_value)
+from data.metadata import get_chinese_name, translate_value 
 
 load_dotenv()
 
-def generate_nursing_summary(patient_id, patient_data, template_name, custom_system_prompt=None, focus_areas=None):
-    """
-    接收病患結構化資料，發送給 AI 生成摘要。
+# --- 輔助函數：自動標籤化 + 數值翻譯 + 重複數據過濾 ---
+def auto_label_data(data_list):
+    """將 list 中的 dict 轉換為中文標籤，並自動進行『數值代碼翻譯』與『去重』"""
+    if not data_list:
+        return ""
     
-    Args:
-        patient_id: 病歷號
-        patient_data: 資料字典
-        template_name: 模板名稱 (對應資料庫中的 template_name)
-        custom_system_prompt: (選用) 自定義 Prompt (優先權最高)
-        focus_areas: list of str，使用者指定的重點關注項目
-    """
+    result_lines = []
+    seen_records = set()
+    
+    for item in data_list:
+        # 1. 去重邏輯：同一時間、同一項目、同一數值視為重複
+        item_name = item.get('CHHEAD') or item.get('SUBJECT') or "項目"
+        item_val = item.get('CHVAL') or item.get('DIAGNOSIS') or "數值"
+        timestamp = item.get('PROCDTTM') or item.get('CHRCPDTM') or ""
+        record_id = f"{timestamp}_{item_name}_{item_val}"
+        
+        if record_id in seen_records:
+            continue
+        seen_records.add(record_id)
+
+        # 2. 遍歷欄位並進行翻譯
+        parts = []
+        for key, value in item.items():
+            # 跳過系統內部欄位與時間
+            if key in ['PROCDTTM', 'CHRCPDTM', 'CHAPPDTM', 'VISITDT', 'ID', 'TRINO', 'PATID']:
+                continue
+            
+            val_str = str(value).strip()
+            # 過濾無效字串 (None / Null)
+            if not val_str or val_str.lower() in ["none", "none~none", "null"]:
+                continue
+            
+            # --- 雙重翻譯邏輯 ---
+            label = get_chinese_name(key)            # 欄位標籤翻譯 (e.g., CHSTAT -> 狀態碼)
+            final_val = translate_value(key, value)   # 數值內容翻譯 (e.g., 30 -> 檢驗中)
+            # -----------------
+            
+            parts.append(f"{label}: {final_val}")
+        
+        if parts:
+            result_lines.append(f"- {timestamp} | {' | '.join(parts)}")
+    
+    return "\n".join(result_lines)
+
+def generate_nursing_summary(patient_id, patient_data, template_name, custom_system_prompt=None, focus_areas=None):
     if not patient_data:
         return "錯誤：無資料可分析。"
 
-    # === 1. 從資料庫獲取所有模板 ===
-    # 這取代了原本寫死的 SYSTEM_PROMPTS 字典
+    # === 1. 獲取模板 ===
     db_templates = get_all_templates()
-    
-    # 確保有模板可用 (若資料庫連線失敗或無資料，使用備用預設值)
-    if not db_templates:
-        base_system_prompt = "你是專業醫療人員，請撰寫病程摘要。"
-        print("⚠️ 警告：無法從資料庫讀取模板，使用預設值。")
-    else:
-        # 嘗試根據名稱獲取內容，若找不到則預設用第一個抓到的
-        base_system_prompt = db_templates.get(template_name)
-        if not base_system_prompt:
-            # 如果指定的名稱找不到，就隨便抓一個當備用
-            base_system_prompt = next(iter(db_templates.values()))
+    base_system_prompt = db_templates.get(template_name) if db_templates else "你是專業醫療人員。"
+    if not base_system_prompt and db_templates:
+        base_system_prompt = next(iter(db_templates.values()))
 
-    # === 2. 決定最終使用的 System Prompt ===
-    # 優先順序：使用者手動編輯 > 資料庫模板
-    if custom_system_prompt:
-        selected_system_prompt = custom_system_prompt
-    else:
-        selected_system_prompt = base_system_prompt
+    # === 2. 決定 System Prompt ===
+    selected_system_prompt = custom_system_prompt if custom_system_prompt else base_system_prompt
 
     # === 3. 加入關注項目 (Focus Areas) ===
-    if focus_areas and len(focus_areas) > 0:
-        focus_instruction = f"""
-        
-**【⚠️ 特別指令：重點關注項目】**
-使用者要求你特別詳細分析以下面向，請務必在摘要中包含相關細節，並將其優先呈現：
-- {", ".join(focus_areas)}
-        """
-        selected_system_prompt += focus_instruction
+    if focus_areas:
+        selected_system_prompt += f"\n\n**【⚠️ 特別指令：重點關注項目】**\n- {', '.join(focus_areas)}"
 
-    # === 4. 資料截斷 (避免 Token 爆量) ===
-    LIMIT_NURSING = 25
-    LIMIT_LABS = 40
-    LIMIT_VITALS = 25
+    # === 4. 資料截斷 ===
+    nursing_list = patient_data.get('nursing', [])[-25:]
+    labs_list = patient_data.get('labs', [])[-60:] 
+    vitals_list = patient_data.get('vitals', [])[-25:]
 
-    nursing_list = patient_data.get('nursing', [])
-    labs_list = patient_data.get('labs', [])
-    vitals_list = patient_data.get('vitals', [])
+    # === 5. 建構 User Prompt (混合標籤化 + 數值轉換) ===
+    data_text = f"=== 病患 ID: {patient_id} 急診臨床資料摘要 ===\n\n"
 
-    if len(nursing_list) > LIMIT_NURSING: nursing_list = nursing_list[-LIMIT_NURSING:]
-    if len(labs_list) > LIMIT_LABS: labs_list = labs_list[-LIMIT_LABS:]
-    if len(vitals_list) > LIMIT_VITALS: vitals_list = vitals_list[-LIMIT_VITALS:]
-
-    # === 5. 建構 User Prompt (資料內容) ===
-    data_text = f"=== 病患 ID: {patient_id} 急診病程資料 (部分摘錄) ===\n\n"
-
-    data_text += f"【護理紀錄】(最新 {len(nursing_list)} 筆)\n"
-    for item in nursing_list:
-        data_text += f"- {item.get('PROCDTTM', '')} | {item.get('SUBJECT', '')} | {item.get('DIAGNOSIS', '')}\n"
+    # A. 護理紀錄 (自動標籤化 + 數值轉換)
+    if nursing_list:
+        data_text += f"【護理紀錄】\n{auto_label_data(nursing_list)}\n\n"
     
-    data_text += f"\n【生理徵象】(最新 {len(vitals_list)} 筆)\n"
-    for item in vitals_list:
-        data_text += f"- {item.get('PROCDTTM')} | T:{item.get('ETEMPUTER')} | P:{item.get('EPLUSE')} | R:{item.get('EBREATHE')} | BP:{item.get('EPRESSURE')}/{item.get('EDIASTOLIC')} | SpO2:{item.get('ESAO2')} | GCS:{item.get('GCS')}\n"
+    # B. 生理監測 (手動精排 + 特定數值轉換)
+    if vitals_list:
+        data_text += f"【生理監測】\n"
+        for item in vitals_list:
+            # 翻譯體溫部位 (ETREGION) 與 檢傷級數 (ENESKIND)
+            region = translate_value('ETREGION', item.get('ETREGION'))
+            t_kind = translate_value('ENESKIND', item.get('ENESKIND'))
+            
+            v_str = (f"- {item.get('PROCDTTM')} | "
+                     f"類型: {t_kind} | "
+                     f"體溫: {item.get('ETEMPUTER')} ({region}) | 脈搏: {item.get('EPLUSE')} | "
+                     f"呼吸: {item.get('EBREATHE')} | 血壓: {item.get('EPRESSURE')}/{item.get('EDIASTOLIC')} | "
+                     f"血氧: {item.get('ESAO2')} | GCS: {item.get('GCS')}\n")
+            data_text += v_str
+        data_text += "\n"
 
-    data_text += f"\n【檢驗報告】(最新 {len(labs_list)} 筆)\n"
-    for item in labs_list:
-        data_text += f"- {item.get('CHRCPDTM')} | {item.get('CHHEAD')} : {item.get('CHVAL')} {item.get('CHUNIT')} (Ref: {item.get('REF_RANGE')})\n"
+    # C. 檢驗報告 (自動標籤化 + 狀態碼轉換)
+    if labs_list:
+        data_text += f"【檢驗報告】\n{auto_label_data(labs_list)}\n"
 
-    # === Debug 輸出 ===
-    print("\n" + "="*50)
-    print(f"🚀 [DEBUG] Template: {template_name} | Custom: {bool(custom_system_prompt)}")
-    print("-" * 50)
-    print(selected_system_prompt[-500:]) 
-    print("="*50 + "\n")
+    # === [Debug] 打印發送給 Groq 的內容 ===
+    print("\n" + "🚀" + "="*20 + " GROQ API 請求內容預覽 " + "="*20)
+    print(f"[System Prompt]:\n{selected_system_prompt[:300]}...") # 預覽前段
+    print(f"[User Data]:\n{data_text}")
+    print("="*65 + "\n")
 
     # === 6. 呼叫 AI API (Groq) ===
     client = OpenAI(
-    api_key=st.secrets["groq"]["api_key"], 
-    base_url="https://api.groq.com/openai/v1"
+        api_key=st.secrets["groq"]["api_key"], 
+        base_url="https://api.groq.com/openai/v1"
     )
     
     try:

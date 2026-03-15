@@ -12,123 +12,101 @@ if parent_dir not in sys.path:
 from db.db_connector import get_db_connection
 from data.metadata import get_chinese_name
 
-def get_patient_full_history(patient_id, start_time=None, end_time=None, tables=None):
+def get_patient_full_history(patient_id, start_time=None, end_time=None, schema_queries=None, full_schema=None):
     """
-    根據病歷號及勾選的 Table 範圍，從資料庫撈取病患數據。
+    根據病歷號及前端勾選的欄位，動態生成 SQL 並從資料庫撈取數據。
     
     Args:
         patient_id (str): 病歷號
         start_time (str, optional): 起始時間 (YYYYMMDDHHMMSS)
         end_time (str, optional): 結束時間
-        tables (list, optional): 欲查詢的鍵值清單，例如 ['nursing', 'vitals', 'labs']
-                                 若為 None 則預設查詢全部。
+        schema_queries (dict): 前端傳來的勾選字典，格式如 {"ENSDATA": ["SUBJECT", "DIAGNOSIS"]}
+        full_schema (dict): 前端傳來的完整 JSON 藍圖 (依賴注入)
     """
     conn = get_db_connection()
     if not conn:
         print("無法建立連線，無法查詢病患資料。")
         return None
 
-    # 初始化回傳結構，確保 AI 模組讀取時不會因缺少 Key 而報錯
+    # 初始化回傳結構，保持與 ai_summarizer 的相容性
     patient_data = {
         "nursing": [],
         "vitals": [],
         "labs": []
     }
 
-    # 如果沒傳入 tables，預設抓取所有支援的資料表
-    if tables is None:
-        tables = ['nursing', 'vitals', 'labs']
+    # 檢查是否都有收到資料 (包含欄位勾選字典 與 藍圖設定)
+    if not schema_queries or not full_schema:
+        print("沒有提供查詢條件或 Schema 藍圖。")
+        return patient_data
+
+    # 將 full_schema 中的 tables 轉為字典方便查詢
+    table_defs = {t["table_name"]: t for t in full_schema["tables"]}
 
     try:
         with conn.cursor() as cur:
-            
-            # ==========================================
-            # 1. 護理紀錄 (ENSDATA)
-            # ==========================================
-            if 'nursing' in tables:
-                sql_nursing = "SELECT PROCDTTM, SUBJECT, DIAGNOSIS FROM ENSDATA WHERE PATID = %s"
-                params_nursing = [patient_id]
+            # 遍歷使用者勾選的每一個資料表與欄位
+            for table_name, selected_columns in schema_queries.items():
+                if not selected_columns:
+                    continue
+                
+                table_info = table_defs.get(table_name)
+                if not table_info:
+                    print(f"警告：Schema 中找不到資料表 {table_name}")
+                    continue
+
+                # 1. 取得該表的關聯設定
+                pid_col = table_info["patient_id_col"]
+                time_col = table_info["time_col"]
+
+                # 2. 確保一定會撈出時間欄位 (供後續排序與顯示使用)
+                select_cols_set = set(selected_columns)
+                select_cols_set.add(time_col)
+                select_cols_list = list(select_cols_set)
+                
+                cols_str = ", ".join(select_cols_list)
+
+                # 3. 動態組裝 SQL 語法
+                sql = f"SELECT {cols_str} FROM {table_name} WHERE {pid_col} = %s"
+                params = [patient_id]
 
                 if start_time:
-                    sql_nursing += " AND PROCDTTM >= %s"
-                    params_nursing.append(start_time)
+                    sql += f" AND {time_col} >= %s"
+                    params.append(start_time)
                 if end_time:
-                    sql_nursing += " AND PROCDTTM <= %s"
-                    params_nursing.append(end_time)
+                    sql += f" AND {time_col} <= %s"
+                    params.append(end_time)
                 
-                sql_nursing += " ORDER BY PROCDTTM ASC"
-                cur.execute(sql_nursing, tuple(params_nursing))
+                sql += f" ORDER BY {time_col} ASC"
                 
-                for row in cur.fetchall():
-                    patient_data["nursing"].append({
-                        "PROCDTTM": row[0],
-                        "SUBJECT": row[1],
-                        "DIAGNOSIS": row[2]
-                    })
+                print(f"🚀 [動態 SQL 執行]: {sql}")
+                cur.execute(sql, tuple(params))
+                rows = cur.fetchall()
 
-            # ==========================================
-            # 2. 生理監測 (v_ai_hisensnes)
-            # ==========================================
-            if 'vitals' in tables:
-                sql_vitals = """
-                    SELECT PROCDTTM, ETEMPUTER, EPLUSE, EBREATHE, EPRESSURE, EDIASTOLIC, ESAO2, 
-                           GCS_E, GCS_V, GCS_M
-                    FROM v_ai_hisensnes WHERE PATID = %s
-                """
-                params_vitals = [patient_id]
+                # 4. 將撈出的 Tuple 轉換成 Dictionary
+                formatted_rows = []
+                for row in rows:
+                    row_dict = {}
+                    for i, col_name in enumerate(select_cols_list):
+                        row_dict[col_name] = row[i]
+                    formatted_rows.append(row_dict)
 
-                if start_time:
-                    sql_vitals += " AND PROCDTTM >= %s"
-                    params_vitals.append(start_time)
-                if end_time:
-                    sql_vitals += " AND PROCDTTM <= %s"
-                    params_vitals.append(end_time)
-                
-                sql_vitals += " ORDER BY PROCDTTM ASC"
-                cur.execute(sql_vitals, tuple(params_vitals))
-                
-                for row in cur.fetchall():
-                    patient_data["vitals"].append({
-                        "PROCDTTM": row[0],
-                        "ETEMPUTER": row[1],
-                        "EPLUSE": row[2],
-                        "EBREATHE": row[3],
-                        "EPRESSURE": row[4],
-                        "EDIASTOLIC": row[5],
-                        "ESAO2": row[6],
-                        "GCS": f"E{row[7]}V{row[8]}M{row[9]}"
-                    })
+                # 5. 針對 ai_summarizer 的特殊需求進行資料分類與合成
+                if table_name == "ENSDATA":
+                    patient_data["nursing"].extend(formatted_rows)
+                    
+                elif table_name == "v_ai_hisensnes":
+                    # 特別處理：合成 GCS 指數，因為 ai_summarizer 有手動抓取 'GCS'
+                    for r in formatted_rows:
+                        if all(k in r for k in ["GCS_E", "GCS_V", "GCS_M"]):
+                            r["GCS"] = f"E{r['GCS_E']}V{r['GCS_V']}M{r['GCS_M']}"
+                    patient_data["vitals"].extend(formatted_rows)
+                    
+                elif table_name in ["DB_ADM_LABDATA_ER", "DB_ADM_LABORDER_ER", "DB_ADM_ORDER_ER"]:
+                    # 將各種檢驗結果與狀態統一放入 labs 區塊
+                    patient_data["labs"].extend(formatted_rows)
 
-            # ==========================================
-            # 3. 檢驗結果 (DB_ADM_LABDATA_ER)
-            # ==========================================
-            if 'labs' in tables:
-                sql_labs = """
-                    SELECT CHRCPDTM, CHHEAD, CHVAL, CHUNIT, CHNL, CHNH
-                    FROM DB_ADM_LABDATA_ER WHERE CHMRNO = %s
-                """
-                params_labs = [patient_id]
-
-                if start_time:
-                    sql_labs += " AND CHRCPDTM >= %s"
-                    params_labs.append(start_time)
-                if end_time:
-                    sql_labs += " AND CHRCPDTM <= %s"
-                    params_labs.append(end_time)
-                
-                sql_labs += " ORDER BY CHRCPDTM ASC"
-                cur.execute(sql_labs, tuple(params_labs))
-                
-                for row in cur.fetchall():
-                    patient_data["labs"].append({
-                        "CHRCPDTM": row[0],
-                        "CHHEAD": row[1],
-                        "CHVAL": row[2],
-                        "CHUNIT": row[3],
-                        "REF_RANGE": f"{row[4]}~{row[5]}"
-                    })
-
-        print(f"✅ 成功撈取資料表: {', '.join(tables)}")
+        print(f"✅ 成功撈取資料表: {', '.join(schema_queries.keys())}")
         return patient_data
 
     except psycopg2.Error as e:

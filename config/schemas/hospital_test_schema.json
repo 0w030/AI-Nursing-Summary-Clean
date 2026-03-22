@@ -1,0 +1,58 @@
+{
+  "hospital_name": "醫院測試區_NIS",
+  "tables": [
+    {
+      "table_name": "RECORD",
+      "display_name": "護理紀錄 (主單)",
+      "columns": [
+        {
+          "col_name": "PATIENT_ID",
+          "label": "病歷號",
+          "default_checked": true
+        },
+        {
+          "col_name": "ENCOUNTER_ID",
+          "label": "就醫序號/急診號",
+          "default_checked": true
+        }
+      ]
+    },
+    {
+      "table_name": "RECORD_VERSION",
+      "display_name": "紀錄版本與時間",
+      "columns": [
+        {
+          "col_name": "TITLE",
+          "label": "紀錄標題",
+          "default_checked": true
+        },
+        {
+          "col_name": "RECORD_TIME",
+          "label": "紀錄時間",
+          "default_checked": true
+        },
+        {
+          "col_name": "CREATOR",
+          "label": "建立人員",
+          "default_checked": false
+        }
+      ]
+    },
+    {
+      "table_name": "RECORD_DETAIL",
+      "display_name": "護理紀錄內容",
+      "columns": [
+        {
+          "col_name": "RECORD_TYPE",
+          "label": "紀錄類型",
+          "default_checked": false
+        },
+        {
+          "col_name": "CONTENT",
+          "label": "護理紀錄內文",
+          "default_checked": true
+        }
+      ]
+    }
+  ]
+}

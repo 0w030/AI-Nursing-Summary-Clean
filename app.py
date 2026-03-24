@@ -14,7 +14,8 @@ from db.template_service import get_all_templates, create_template, update_templ
 from ai.ai_summarizer import generate_nursing_summary
 from db.auth_service import authenticate_user
 
-import json
+# --- ⚠️ 關鍵新增：在這裡啟動 .env 讀取器 ---
+load_dotenv()
 
 # --- 初始化登入狀態 ---
 if "logged_in" not in st.session_state:
@@ -23,7 +24,8 @@ if "logged_in" not in st.session_state:
     st.session_state.role = ""
 
 @st.cache_data
-def load_hospital_schema(filepath="config\schemas\hospital_A_schema.json"):
+# ⚠️ 注意：路徑請用斜線 (/)，並確認這裡的檔名是你剛建好的 Oracle JSON 檔
+def load_hospital_schema(filepath="config/schemas/hospital_test_schema.json"):
     """讀取醫院的 JSON 藍圖設定檔"""
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
@@ -35,7 +37,7 @@ def load_hospital_schema(filepath="config\schemas\hospital_A_schema.json"):
 hospital_schema = load_hospital_schema()
 
 # --- 設定網頁 ---
-st.set_page_config(page_title="AI 醫療模板系統", layout="wide", page_icon="")
+st.set_page_config(page_title="AI 醫療模板系統", layout="wide", page_icon="🏥")
 
 # ===== session_state 初始化 =====
 if "preview_prompt" not in st.session_state:
@@ -47,19 +49,21 @@ if "last_template_name" not in st.session_state:
 if "last_style_option" not in st.session_state:
     st.session_state.last_style_option = None
 
-
 # ===== 全域預設（避免 NameError）=====
 selected_info = None
 target_patient_id = None
 earliest_dt = None
-DB_HOST = st.secrets["database"]["host"]
-DB_PORT = st.secrets["database"]["port"]
-DB_NAME = st.secrets["database"]["name"]
-DB_USER = st.secrets["database"]["user"]
-DB_PASSWORD = st.secrets["database"]["password"]
 
-# 讀取 GROQ API Key
-GROQ_API_KEY = st.secrets["groq"]["api_key"]
+# ===== 讀取環境變數 (全面取代原本會報錯的 st.secrets) =====
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+
+# 讀取 GROQ API Key (請確保你的 .env 檔案裡有一行 GROQ_API_KEY=你的金鑰)
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
 TAB_LIBRARY = "模板庫管理"
 TAB_CREATE = "建立新模板"
 
@@ -88,7 +92,7 @@ patients_list = load_patient_list()
 # ==========================================
 if not st.session_state.logged_in:
     # 🔴 畫面 A：未登入時，只顯示登入表單
-    st.title("🏥 AI 護理交班系統 - 請先登入")
+    st.title(" AI 護理交班系統 - 請先登入")
     
     with st.form("login_form"):
         st.subheader("系統登入")

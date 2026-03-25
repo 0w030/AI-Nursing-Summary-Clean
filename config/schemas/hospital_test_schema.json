@@ -6,14 +6,14 @@
       "display_name": "護理紀錄 (主單)",
       "columns": [
         {
-          "col_name": "PATIENT_ID",
-          "label": "病歷號",
-          "default_checked": true
-        },
-        {
           "col_name": "ENCOUNTER_ID",
           "label": "就醫序號/急診號",
           "default_checked": true
+        },
+        {
+          "col_name": "SIGNSTATUS",
+          "label": "簽核狀態",
+          "default_checked": false
         }
       ]
     },
@@ -32,8 +32,18 @@
           "default_checked": true
         },
         {
+          "col_name": "ZONE_ID",
+          "label": "病房/區域代碼",
+          "default_checked": false
+        },
+        {
           "col_name": "CREATOR",
           "label": "建立人員",
+          "default_checked": false
+        },
+        {
+          "col_name": "CHECKUSERNAME",
+          "label": "審核主管",
           "default_checked": false
         }
       ]

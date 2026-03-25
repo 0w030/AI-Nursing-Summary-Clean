@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import json
 from dotenv import load_dotenv
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 # from feedback_component import show_feedback_ui
 
 # 引入後端模組
@@ -82,7 +82,8 @@ def load_patient_list():
     for p in raw_list:
         p['最早紀錄_顯示'] = format_time_str(p['最早紀錄'])
         p['最晚紀錄_顯示'] = format_time_str(p['最晚紀錄'])
-        p['label'] = f"{p['病歷號']} (共 {p['資料筆數']} 筆資料)"
+        # 升級：在選單上同時顯示病歷號與就醫序號
+        p['label'] = f"病歷號: {p['病歷號']} | 就醫序號: {p['就醫序號']} (共 {p['資料筆數']} 筆)"
     return raw_list
 
 patients_list = load_patient_list()
@@ -138,17 +139,18 @@ else:
     if app_mode == " 摘要生成器":
         st.header(" AI 急診病程摘要生成")
         
-        # 1. 選擇病患
-        st.subheader("1. 選擇病患")
+        # 1. 選擇病患 (升級版)
+        st.subheader("1. 選擇病患與就醫紀錄")
         options = ["請選擇..."] + [p['label'] for p in patients_list]
-        selected_label = st.selectbox("病患清單：", options, index=0)
+        selected_label = st.selectbox("就醫清單：", options, index=0)
         
-        target_patient_id = None
+        target_encounter_id = None
         selected_info = None
         if selected_label != "請選擇...":
             selected_info = next((p for p in patients_list if p['label'] == selected_label), None)
-            target_patient_id = selected_info['病歷號']
-            st.success(f"已選定：{target_patient_id}")
+            target_encounter_id = selected_info['就醫序號']
+            patient_id_display = selected_info['病歷號']
+            st.success(f"已選定病患：{patient_id_display} / 就醫序號：{target_encounter_id}")
 
         earliest_dt = None
 
@@ -250,27 +252,37 @@ else:
             if cols[i % 3].checkbox(option, value=option in default_focus):
                 selected_focus_areas.append(option)
 
-        # 5. 時間範圍篩選
-        with st.expander(" 時間範圍篩選 (選填)"):
-            use_time_filter = st.checkbox("啟用篩選")
+        # 5. 起始時間篩選
+        is_expanded = st.session_state.get("time_toggle_state", False)
+        
+        with st.expander("護理紀錄時間篩選 (選填)", expanded=is_expanded):
+            # 加上 key="time_toggle_state" 讓系統記住狀態
+            use_time_filter = st.toggle(
+                "啟用時間篩選", 
+                key="time_toggle_state",
+                help="開啟後，AI 只會讀取指定時間點之後的護理紀錄"
+            )
             start_dt_str = None
 
-        if use_time_filter:
-            default_date = earliest_dt.date() if earliest_dt else datetime.now().date()
-            default_time = earliest_dt.time() if earliest_dt else time(0, 0)
+            if use_time_filter:
+                default_datetime = earliest_dt if earliest_dt else datetime.now() - timedelta(days=1)
+                default_date = default_datetime.date()
+                default_time = default_datetime.time()
 
-            c1, c2 = st.columns(2)
-            d1 = c1.date_input("開始日期", default_date)
-            t1 = c2.time_input("開始時間", default_time)
+                st.caption("請選擇要從哪一個時間點開始讀取紀錄：")
+                c1, c2 = st.columns(2)
+                d1 = c1.date_input("開始日期", default_date)
+                t1 = c2.time_input("開始時間", default_time)
 
-            start_dt_str = f"{d1.year}{d1.month:02d}{d1.day:02d}{t1.hour:02d}{t1.minute:02d}00"
+                combined_dt = datetime.combine(d1, t1)
+                start_dt_str = combined_dt.strftime("%Y%m%d%H%M%S")
 
         # 6. 執行按鈕
-        if target_patient_id:
+        if target_encounter_id:
             if st.button(" 開始生成摘要", type="primary", use_container_width=True):
                 
                 load_dotenv()
-                if not st.secrets["groq"]["api_key"]:
+                if not os.getenv("GROQ_API_KEY"):
                     st.error("未設定 API Key")
                     st.stop()
                     
@@ -287,7 +299,7 @@ else:
                     )
 
                     summary = generate_nursing_summary(
-                        target_patient_id,
+                        target_encounter_id,
                         p_data,
                         selected_template_name,
                         custom_system_prompt=st.session_state.preview_prompt,

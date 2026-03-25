@@ -176,8 +176,8 @@ from db.db_connector import get_db_connection
 
 def get_all_patients_overview():
     """
-    獲取所有病患的概況清單，用於前端介面的「選擇病患」下拉選單。
-    這個函數會自己去 JOIN 主單與版本表，計算每位病人的資料筆數與時間範圍。
+    獲取所有病患的「單次就醫」概況清單。
+    改為使用 PATIENT_ID + ENCOUNTER_ID 進行群組化。
     """
     conn = get_db_connection()
     if not conn:
@@ -185,18 +185,21 @@ def get_all_patients_overview():
 
     try:
         with conn.cursor() as cur:
-            # Oracle 方言：使用 TO_CHAR 轉換時間格式，並用 LEFT JOIN 接上版本表
+            # 升級：同時撈取並 GROUP BY 就醫序號
             sql = """
                 SELECT 
                     r.PATIENT_ID, 
+                    r.ENCOUNTER_ID, 
                     COUNT(r.POID) as doc_count,
                     MIN(TO_CHAR(rv.RECORD_TIME, 'YYYYMMDDHH24MISS')) as earliest_time,
                     MAX(TO_CHAR(rv.RECORD_TIME, 'YYYYMMDDHH24MISS')) as latest_time
                 FROM RECORD r
                 LEFT JOIN RECORD_VERSION rv ON r.POID = rv.RECORD_POID
-                WHERE r.PATIENT_ID IS NOT NULL
-                GROUP BY r.PATIENT_ID
-                ORDER BY r.PATIENT_ID
+                LEFT JOIN RECORD_DETAIL rd ON r.POID = rd.RECORD_POID
+                WHERE r.PATIENT_ID IS NOT NULL AND r.ENCOUNTER_ID IS NOT NULL
+                AND rv.STATUS = 'Y'
+                GROUP BY r.PATIENT_ID, r.ENCOUNTER_ID
+                ORDER BY MAX(rv.RECORD_TIME) DESC
             """
             cur.execute(sql)
             rows = cur.fetchall()
@@ -205,22 +208,22 @@ def get_all_patients_overview():
             for row in rows:
                 result.append({
                     "病歷號": row[0],
-                    "資料筆數": row[1],
-                    "最早紀錄": row[2] if row[2] else "",
-                    "最晚紀錄": row[3] if row[3] else ""
+                    "就醫序號": row[1],
+                    "資料筆數": row[2],
+                    "最早紀錄": row[3] if row[3] else "",
+                    "最晚紀錄": row[4] if row[4] else ""
                 })
             return result
     except Exception as e:
-        print(f"❌ 取得病患清單失敗: {e}")
+        print(f"❌ 取得就醫清單失敗: {e}")
         return []
     finally:
         if conn:
             conn.close()
 
-def get_patient_full_history(patient_id, start_time=None, schema_queries=None, full_schema=None):
+def get_patient_full_history(encounter_id, start_time=None, schema_queries=None, full_schema=None):
     """
-    根據使用者在畫面上勾選的 JSON 藍圖 (schema_queries)，
-    動態組裝 Oracle SQL 語法，把三張表 JOIN 起來，並將結果轉換為 AI 容易閱讀的文字。
+    改為接收 encounter_id 作為唯一查詢目標，確保只撈取單次就醫的紀錄。
     """
     conn = get_db_connection()
     if not conn:
@@ -230,66 +233,55 @@ def get_patient_full_history(patient_id, start_time=None, schema_queries=None, f
         return "沒有選擇任何查詢欄位。"
 
     try:
-        # 1. 動態組裝 SELECT 欄位
         select_cols = []
-        
-        # 設定資料表的縮寫 (Alias)，對應 SQL 語句
         table_aliases = {
             "RECORD": "r",
             "RECORD_VERSION": "rv",
             "RECORD_DETAIL": "rd"
         }
 
-        # 根據前端傳來的 dictionary (如 {'RECORD': ['PATIENT_ID'], 'RECORD_DETAIL': ['CONTENT']})
         for table_name, cols in schema_queries.items():
             alias = table_aliases.get(table_name, "")
             for col in cols:
                 select_cols.append(f"{alias}.{col}")
 
-        # 將選取的欄位用逗號串接，如果沒選就預設全抓 (*)
         select_clause = ", ".join(select_cols) if select_cols else "*"
 
-        # 2. 建立包含三張表關聯的 JOIN 語句 (使用 POID 與 RECORD_POID 串連)
+        # 升級：WHERE 條件改成認 ENCOUNTER_ID
         sql = f"""
             SELECT {select_clause}
             FROM RECORD r
             LEFT JOIN RECORD_VERSION rv ON r.POID = rv.RECORD_POID
             LEFT JOIN RECORD_DETAIL rd ON r.POID = rd.RECORD_POID
-            WHERE r.PATIENT_ID = :patient_id
+            WHERE r.ENCOUNTER_ID = :encounter_id
+            AND rv.STATUS = 'Y'
         """
 
-        # 3. 綁定變數與時間篩選 (Oracle 使用 :變數名稱)
-        params = {"patient_id": patient_id}
+        # 綁定變數
+        params = {"encounter_id": encounter_id}
         
         if start_time:
-            # Oracle 方言：使用 TO_DATE 把字串轉回時間格式進行比較
-            sql += " AND rv.RECORD_TIME >= TO_DATE(:start_time, 'YYYYMMDDHH24MISS')"
+            sql += " AND rv.RECORD_TIME >= TO_TIMESTAMP(:start_time, 'YYYYMMDDHH24MISS')"
             params["start_time"] = start_time
             
-        # 依時間降序排列，讓最新的紀錄在最前面
         sql += " ORDER BY rv.RECORD_TIME DESC"
 
-        # 4. 執行查詢
         with conn.cursor() as cur:
             cur.execute(sql, params)
-            
-            # 從 cursor.description 獲取真實的欄位名稱
             col_names = [desc[0] for desc in cur.description]
             rows = cur.fetchall()
 
             if not rows:
-                return f"找不到病歷號 {patient_id} 的護理紀錄。"
+                return f"找不到就醫序號 {encounter_id} 的護理紀錄。"
 
-            # 5. 格式化輸出給 AI 閱讀
-            # 將資料庫撈出來的二維表格，轉換成一行一行的文字結構
-            output_lines = [f"病歷號：{patient_id} 的護理紀錄\n" + "="*40]
+            # 將標題改為顯示就醫序號
+            output_lines = [f"就醫序號：{encounter_id} 的護理紀錄\n" + "="*40]
             
             for row in rows:
                 row_dict = dict(zip(col_names, row))
                 record_block = []
                 for key, value in row_dict.items():
                     if value is not None: 
-                        # 處理特殊字元或時間物件，轉為字串
                         val_str = str(value).strip() 
                         record_block.append(f"[{key}]: {val_str}")
                 
@@ -299,7 +291,7 @@ def get_patient_full_history(patient_id, start_time=None, schema_queries=None, f
             return "\n".join(output_lines)
 
     except Exception as e:
-        error_msg = f"❌ 查詢病患紀錄失敗: {e}"
+        error_msg = f"❌ 查詢紀錄失敗: {e}"
         print(error_msg)
         return error_msg
     finally:

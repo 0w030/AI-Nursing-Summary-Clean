@@ -5,14 +5,19 @@ import os
 import pandas as pd
 import json
 from dotenv import load_dotenv
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 # from feedback_component import show_feedback_ui
 
 # 引入後端模組
 from db.patient_service import get_patient_full_history, get_all_patients_overview
 from db.template_service import get_all_templates, create_template, update_template
 from ai.ai_summarizer import generate_nursing_summary
-from db.auth_service import authenticate_user
+from db.auth_service import (
+    authenticate_user, create_user, user_exists,
+    get_all_users, search_users, get_user_count,
+    update_user, reset_password, soft_delete_user, restore_user
+)
+
 
 # --- ⚠️ 關鍵新增：在這裡啟動 .env 讀取器 ---
 load_dotenv()
@@ -82,7 +87,8 @@ def load_patient_list():
     for p in raw_list:
         p['最早紀錄_顯示'] = format_time_str(p['最早紀錄'])
         p['最晚紀錄_顯示'] = format_time_str(p['最晚紀錄'])
-        p['label'] = f"{p['病歷號']} (共 {p['資料筆數']} 筆資料)"
+        # 升級：在選單上同時顯示病歷號與就醫序號
+        p['label'] = f"病歷號: {p['病歷號']} | 就醫序號: {p['就醫序號']} (共 {p['資料筆數']} 筆)"
     return raw_list
 
 patients_list = load_patient_list()
@@ -127,8 +133,20 @@ else:
         if st.session_state.role == "user":
             st.info("您目前的權限僅能使用「摘要生成」功能。")
             app_mode = " 摘要生成器"
+        elif st.session_state.role == "admin":
+            # Admin 可以訪問管理員功能
+            app_mode = st.radio(
+                "請選擇功能模式：",
+                [" 摘要生成器", " 模板設計師", " 👥 人員管理"],
+                index=0
+            )
         else:
-            app_mode = st.radio("請選擇功能模式：", [" 摘要生成器", " 模板設計師"], index=0)
+            # Manager 和其他角色
+            app_mode = st.radio(
+                "請選擇功能模式：",
+                [" 摘要生成器", " 模板設計師"],
+                index=0
+            )
             
         st.divider()
 
@@ -138,17 +156,18 @@ else:
     if app_mode == " 摘要生成器":
         st.header(" AI 急診病程摘要生成")
         
-        # 1. 選擇病患
-        st.subheader("1. 選擇病患")
+        # 1. 選擇病患 (升級版)
+        st.subheader("1. 選擇病患與就醫紀錄")
         options = ["請選擇..."] + [p['label'] for p in patients_list]
-        selected_label = st.selectbox("病患清單：", options, index=0)
+        selected_label = st.selectbox("就醫清單：", options, index=0)
         
-        target_patient_id = None
+        target_encounter_id = None
         selected_info = None
         if selected_label != "請選擇...":
             selected_info = next((p for p in patients_list if p['label'] == selected_label), None)
-            target_patient_id = selected_info['病歷號']
-            st.success(f"已選定：{target_patient_id}")
+            target_encounter_id = selected_info['就醫序號']
+            patient_id_display = selected_info['病歷號']
+            st.success(f"已選定病患：{patient_id_display} / 就醫序號：{target_encounter_id}")
 
         earliest_dt = None
 
@@ -250,27 +269,37 @@ else:
             if cols[i % 3].checkbox(option, value=option in default_focus):
                 selected_focus_areas.append(option)
 
-        # 5. 時間範圍篩選
-        with st.expander(" 時間範圍篩選 (選填)"):
-            use_time_filter = st.checkbox("啟用篩選")
+        # 5. 起始時間篩選
+        is_expanded = st.session_state.get("time_toggle_state", False)
+        
+        with st.expander("護理紀錄時間篩選 (選填)", expanded=is_expanded):
+            # 加上 key="time_toggle_state" 讓系統記住狀態
+            use_time_filter = st.toggle(
+                "啟用時間篩選", 
+                key="time_toggle_state",
+                help="開啟後，AI 只會讀取指定時間點之後的護理紀錄"
+            )
             start_dt_str = None
 
-        if use_time_filter:
-            default_date = earliest_dt.date() if earliest_dt else datetime.now().date()
-            default_time = earliest_dt.time() if earliest_dt else time(0, 0)
+            if use_time_filter:
+                default_datetime = earliest_dt if earliest_dt else datetime.now() - timedelta(days=1)
+                default_date = default_datetime.date()
+                default_time = default_datetime.time()
 
-            c1, c2 = st.columns(2)
-            d1 = c1.date_input("開始日期", default_date)
-            t1 = c2.time_input("開始時間", default_time)
+                st.caption("請選擇要從哪一個時間點開始讀取紀錄：")
+                c1, c2 = st.columns(2)
+                d1 = c1.date_input("開始日期", default_date)
+                t1 = c2.time_input("開始時間", default_time)
 
-            start_dt_str = f"{d1.year}{d1.month:02d}{d1.day:02d}{t1.hour:02d}{t1.minute:02d}00"
+                combined_dt = datetime.combine(d1, t1)
+                start_dt_str = combined_dt.strftime("%Y%m%d%H%M%S")
 
         # 6. 執行按鈕
-        if target_patient_id:
+        if target_encounter_id:
             if st.button(" 開始生成摘要", type="primary", use_container_width=True):
                 
                 load_dotenv()
-                if not st.secrets["groq"]["api_key"]:
+                if not os.getenv("GROQ_API_KEY"):
                     st.error("未設定 API Key")
                     st.stop()
                     
@@ -287,7 +316,7 @@ else:
                     )
 
                     summary = generate_nursing_summary(
-                        target_patient_id,
+                        target_encounter_id,
                         p_data,
                         selected_template_name,
                         custom_system_prompt=st.session_state.preview_prompt,
@@ -298,6 +327,465 @@ else:
                     st.markdown("---")
                     st.markdown(summary)
 
+
+    # ==============================================================================
+    # 模式 C：人員管理 (Admin 專用)
+    # ==============================================================================
+    if app_mode == " 👥 人員管理":
+        # 路由守衛：確保只有 admin 可以訪問
+        if st.session_state.role != "admin":
+            st.error(" 403 禁止訪問：您沒有權限訪問此頁面！")
+            st.info("只有管理員（Admin）可以訪問人員管理功能。")
+            st.stop()
+        
+        st.header("人員管理中心")
+        st.markdown("在此頁面，您可以新增不同角色的使用者帳號。")
+        
+        # 頁籤：新增人員 / 帳號列表
+        tab1, tab2 = st.tabs([" 新增人員", " 帳號管理"])
+        
+        # ======= Tab 1：新增人員 =======
+        with tab1:
+            st.subheader("新增人員帳號")
+            st.markdown("請填寫以下表單，新增不同角色的帳號：")
+            
+            with st.form("add_user_form"):
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    full_name = st.text_input(
+                        "姓名",
+                        placeholder="例如：王小明",
+                        help="新增人員的真實姓名"
+                    )
+                
+                with col2:
+                    username = st.text_input(
+                        "帳號（Email 或 Username）",
+                        placeholder="例如：wang.xiaoming@hospital.com 或 wwang",
+                        help="帳號必須唯一，不可重複"
+                    )
+                
+                col3, col4 = st.columns(2)
+                
+                with col3:
+                    password = st.text_input(
+                        "密碼",
+                        type="password",
+                        placeholder="至少 6 個字符",
+                        help="密碼將被加密儲存"
+                    )
+                
+                with col4:
+                    password_confirm = st.text_input(
+                        "確認密碼",
+                        type="password",
+                        placeholder="請再次輸入密碼",
+                        help="必須與上方密碼相同"
+                    )
+                
+                col5, col6 = st.columns(2)
+                
+                with col5:
+                    role = st.selectbox(
+                        "角色選擇",
+                        options=["user", "manager"],
+                        format_func=lambda x: {
+                            "user": "一般使用者（User）",
+                            "manager": "護理主任（Manager）"
+                        }[x],
+                        help="選擇新增人員的系統角色"
+                    )
+                
+                with col6:
+                    department = st.text_input(
+                        "部門",
+                        placeholder="例如：急診科",
+                        help="這是額外參考信息，不影響系統權限"
+                    )
+                
+                # 備註
+                notes = st.text_area(
+                    "備註（選填）",
+                    placeholder="例如：新進人員，需要培訓...",
+                    height=100,
+                    help="適用於內部備忘"
+                )
+                
+                submit_button = st.form_submit_button(
+                    " 確認新增",
+                    use_container_width=True,
+                    type="primary"
+                )
+                
+                # ===== 表單驗證與提交 =====
+                if submit_button:
+                    # 驗證輸入
+                    errors = []
+                    
+                    if not full_name or len(full_name.strip()) < 2:
+                        errors.append("姓名至少需要 2 個字符")
+                    
+                    if not username or len(username.strip()) < 3:
+                        errors.append("帳號至少需要 3 個字符")
+                    
+                    if not password or len(password) < 6:
+                        errors.append("密碼至少需要 6 個字符")
+                    
+                    if password != password_confirm:
+                        errors.append("密碼與確認密碼不相符")
+                    
+                    if "@" in username and "." not in username.split("@")[1]:
+                        errors.append("Email 格式不正確")
+                    
+                    # 顯示錯誤
+                    if errors:
+                        for error in errors:
+                            st.error(error)
+                    else:
+                        # 調用後端 API 創建用戶
+                        result = create_user(username, password, role)
+                        
+                        if result['success']:
+                            st.success(result['message'])
+                            st.info(
+                                f"**帳號資訊彙總**\n\n"
+                                f"- 帳號：`{username}`\n"
+                                f"- 角色：{role}\n"
+                                f"- 部門：{department if department else '未指定'}\n\n"
+                                f"該帳號現在可以正常登入系統。"
+                            )
+                        else:
+                            st.error(result['message'])
+        
+        # ======= Tab 2：帳號管理（完整 CRUD） =======
+        with tab2:
+            st.subheader("👥 帳號列表與管理")
+            
+            # 初始化分頁相關的 session state
+            if "page_number" not in st.session_state:
+                st.session_state.page_number = 1
+            if "search_keyword" not in st.session_state:
+                st.session_state.search_keyword = ""
+            if "role_filter" not in st.session_state:
+                st.session_state.role_filter = ""
+            if "edit_user_id" not in st.session_state:
+                st.session_state.edit_user_id = None
+            if "delete_confirm_id" not in st.session_state:
+                st.session_state.delete_confirm_id = None
+            
+            # ========== 搜尋和篩選 ==========
+            col1, col2, col3 = st.columns([2, 1, 1])
+            
+            with col1:
+                search_keyword = st.text_input(
+                    "🔍 搜尋帳號或姓名",
+                    value=st.session_state.search_keyword,
+                    placeholder="輸入帳號或姓名以搜尋用戶"
+                )
+                st.session_state.search_keyword = search_keyword
+            
+            with col2:
+                role_filter_selected = st.selectbox(
+                    "🎯 按角色篩選",
+                    options=["全部", "admin", "manager", "user"],
+                    format_func=lambda x: {
+                        "全部": "全部角色",
+                        "admin": "管理員",
+                        "manager": "護理主任",
+                        "user": "一般使用者"
+                    }.get(x, x),
+                    index=0 if not st.session_state.role_filter else (
+                        ["", "admin", "manager", "user"].index(st.session_state.role_filter)
+                        if st.session_state.role_filter in ["", "admin", "manager", "user"]
+                        else 0
+                    )
+                )
+                # 轉換選中的值
+                role_filter = "" if role_filter_selected == "全部" else role_filter_selected
+                st.session_state.role_filter = role_filter
+            
+            with col3:
+                if st.button("重置篩選", use_container_width=True):
+                    st.session_state.search_keyword = ""
+                    st.session_state.role_filter = ""
+                    st.session_state.page_number = 1
+                    st.rerun()
+            
+            st.divider()
+            
+            # ========== 獲取數據 ==========
+            if st.session_state.search_keyword or st.session_state.role_filter:
+                filtered_users = search_users(
+                    st.session_state.search_keyword,
+                    st.session_state.role_filter
+                )
+                total_users = len(filtered_users)
+            else:
+                filtered_users = get_all_users()
+                total_users = get_user_count()
+            
+            # ========== 分頁設置 ==========
+            items_per_page = 10
+            total_pages = (total_users + items_per_page - 1) // items_per_page
+            
+            # 確保當前頁碼有效
+            if st.session_state.page_number > total_pages and total_pages > 0:
+                st.session_state.page_number = total_pages
+            elif st.session_state.page_number < 1:
+                st.session_state.page_number = 1
+            
+            # 計算當前頁的起始和結束索引
+            start_idx = (st.session_state.page_number - 1) * items_per_page
+            end_idx = start_idx + items_per_page
+            page_users = filtered_users[start_idx:end_idx]
+            
+            # ========== 顯示用戶統計 ==========
+            col_stats1, col_stats2, col_stats3 = st.columns(3)
+            with col_stats1:
+                st.metric("總用戶數", total_users)
+            with col_stats2:
+                active_count = sum(1 for u in get_all_users() if not u['is_deleted'])
+                st.metric("活躍用戶", active_count)
+            with col_stats3:
+                if total_pages > 0:
+                    st.metric("當前頁", f"{st.session_state.page_number} / {total_pages}")
+            
+            st.divider()
+            
+            # ========== 用戶表格 ==========
+            if page_users:
+                # 準備表格數據
+                table_data = []
+                for user in page_users:
+                    role_display = {
+                        'admin': '👨‍💼 管理員',
+                        'manager': '📋 護理主任',
+                        'user': '👤 一般使用者'
+                    }.get(user['role'], user['role'])
+                    
+                    status = "❌ 已停用" if user['is_deleted'] else "✅ 活躍"
+                    
+                    table_data.append({
+                        'ID': user['id'],
+                        '帳號': user['username'],
+                        '姓名': user['display_name'],
+                        '角色': role_display,
+                        '狀態': status,
+                        '建立時間': user['created_at'][:10]  # 只顯示日期部分
+                    })
+                
+                # 顯示表格
+                st.dataframe(
+                    pd.DataFrame(table_data),
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # ========== 操作按鈕 ==========
+                st.markdown("**📝 操作**")
+                
+                for user in page_users:
+                    col_id, col_user, col_actions = st.columns([1, 2, 3])
+                    
+                    with col_id:
+                        st.write(f"ID: {user['id']}")
+                    
+                    with col_user:
+                        st.write(f"{user['username']} ({user['display_name']})")
+                    
+                    with col_actions:
+                        action_cols = st.columns([1, 1, 1])
+                        
+                        with action_cols[0]:
+                            if st.button("✏️ 編輯", key=f"edit_{user['id']}", use_container_width=True):
+                                st.session_state.edit_user_id = user['id']
+                        
+                        with action_cols[1]:
+                            if st.button("🔐 重設密碼", key=f"reset_{user['id']}", use_container_width=True):
+                                st.session_state.edit_mode = "reset_password"
+                                st.session_state.edit_user_id = user['id']
+                        
+                        with action_cols[2]:
+                            if not user['is_deleted'] and user['role'] != 'admin':
+                                if st.button("🗑️ 刪除", key=f"delete_{user['id']}", use_container_width=True):
+                                    st.session_state.delete_confirm_id = user['id']
+                            elif user['is_deleted']:
+                                if st.button("↩️ 恢復", key=f"restore_{user['id']}", use_container_width=True):
+                                    result = restore_user(user['id'])
+                                    if result['success']:
+                                        st.success(result['message'])
+                                        st.rerun()
+                                    else:
+                                        st.error(result['message'])
+            else:
+                st.info("📭 沒有找到符合條件的用戶")
+            
+            # ========== 分頁控制 ==========
+            if total_pages > 1:
+                st.divider()
+                col_prev, col_page, col_next = st.columns([1, 3, 1])
+                
+                with col_prev:
+                    if st.button("⬅️ 上一頁", use_container_width=True):
+                        st.session_state.page_number = max(1, st.session_state.page_number - 1)
+                        st.rerun()
+                
+                with col_page:
+                    st.markdown(f"<div style='text-align:center'>📄 第 {st.session_state.page_number} / {total_pages} 頁</div>", 
+                               unsafe_allow_html=True)
+                
+                with col_next:
+                    if st.button("下一頁 ➡️", use_container_width=True):
+                        st.session_state.page_number = min(total_pages, st.session_state.page_number + 1)
+                        st.rerun()
+            
+            # ========== 編輯對話框 ==========
+            if st.session_state.edit_user_id is not None:
+                st.divider()
+                st.subheader("✏️ 編輯用戶信息")
+                
+                # 獲取用戶信息
+                current_user = None
+                for u in get_all_users(include_deleted=True):
+                    if u['id'] == st.session_state.edit_user_id:
+                        current_user = u
+                        break
+                
+                if current_user:
+                    with st.form("edit_user_form"):
+                        col_form1, col_form2 = st.columns(2)
+                        
+                        with col_form1:
+                            st.text_input(
+                                "帳號（唯讀）",
+                                value=current_user['username'],
+                                disabled=True,
+                                help="帳號無法修改"
+                            )
+                        
+                        with col_form2:
+                            display_name = st.text_input(
+                                "姓名",
+                                value=current_user['display_name']
+                            )
+                        
+                        new_role = st.selectbox(
+                            "角色",
+                            options=["admin", "manager", "user"],
+                            index=["admin", "manager", "user"].index(current_user['role']),
+                            format_func=lambda x: {
+                                "admin": "👨‍💼 管理員",
+                                "manager": "📋 護理主任",
+                                "user": "👤 一般使用者"
+                            }[x]
+                        )
+                        
+                        col_submit, col_cancel = st.columns(2)
+                        with col_submit:
+                            if st.form_submit_button("💾 保存修改", use_container_width=True):
+                                updates = {}
+                                if display_name != current_user['display_name']:
+                                    updates['display_name'] = display_name
+                                if new_role != current_user['role']:
+                                    updates['role'] = new_role
+                                
+                                if updates:
+                                    result = update_user(st.session_state.edit_user_id, updates)
+                                    if result['success']:
+                                        st.success(result['message'])
+                                        st.session_state.edit_user_id = None
+                                        st.rerun()
+                                    else:
+                                        st.error(result['message'])
+                                else:
+                                    st.info("沒有進行任何修改")
+                        
+                        with col_cancel:
+                            if st.form_submit_button("❌ 取消", use_container_width=True):
+                                st.session_state.edit_user_id = None
+                                st.rerun()
+            
+            # ========== 重設密碼對話框 ==========
+            if st.session_state.get("edit_mode") == "reset_password" and st.session_state.edit_user_id is not None:
+                st.divider()
+                st.subheader("🔐 重設密碼")
+                
+                current_user = None
+                for u in get_all_users(include_deleted=True):
+                    if u['id'] == st.session_state.edit_user_id:
+                        current_user = u
+                        break
+                
+                if current_user:
+                    with st.form("reset_password_form"):
+                        st.info(f"正在重設 {current_user['username']} 的密碼")
+                        
+                        new_password = st.text_input(
+                            "新密碼",
+                            type="password",
+                            placeholder="至少 6 個字符"
+                        )
+                        
+                        confirm_password = st.text_input(
+                            "確認新密碼",
+                            type="password",
+                            placeholder="重新輸入密碼"
+                        )
+                        
+                        col_submit, col_cancel = st.columns(2)
+                        with col_submit:
+                            if st.form_submit_button("✅ 重設密碼", use_container_width=True):
+                                if not new_password:
+                                    st.error("請輸入新密碼")
+                                elif new_password != confirm_password:
+                                    st.error("密碼不相符，請重新輸入")
+                                else:
+                                    result = reset_password(st.session_state.edit_user_id, new_password)
+                                    if result['success']:
+                                        st.success(result['message'])
+                                        st.session_state.edit_user_id = None
+                                        st.session_state.edit_mode = None
+                                        st.rerun()
+                                    else:
+                                        st.error(result['message'])
+                        
+                        with col_cancel:
+                            if st.form_submit_button("❌ 取消", use_container_width=True):
+                                st.session_state.edit_user_id = None
+                                st.session_state.edit_mode = None
+                                st.rerun()
+            
+            # ========== 刪除確認對話框 ==========
+            if st.session_state.delete_confirm_id is not None:
+                st.divider()
+                st.warning("⚠️ 確認刪除")
+                
+                current_user = None
+                for u in get_all_users():
+                    if u['id'] == st.session_state.delete_confirm_id:
+                        current_user = u
+                        break
+                
+                if current_user:
+                    st.write(f"您確定要刪除用戶 **{current_user['username']}** (姓名：{current_user['display_name']}) 嗎？")
+                    st.info("💡 該用戶將被標記為已刪除，無法登入系統，但數據會被保留以供審計。")
+                    
+                    col_del, col_cancel = st.columns(2)
+                    with col_del:
+                        if st.button("🗑️ 確認刪除", use_container_width=True, key="confirm_delete"):
+                            result = soft_delete_user(st.session_state.delete_confirm_id)
+                            if result['success']:
+                                st.success(result['message'])
+                                st.session_state.delete_confirm_id = None
+                                st.rerun()
+                            else:
+                                st.error(result['message'])
+                    
+                    with col_cancel:
+                        if st.button("❌ 取消", use_container_width=True, key="cancel_delete"):
+                            st.session_state.delete_confirm_id = None
+                            st.rerun()
 
     # ==============================================================================
     # 模式 B：模板設計師 (管理後台)

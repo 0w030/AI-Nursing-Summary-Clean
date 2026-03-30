@@ -87,7 +87,7 @@ load_dotenv()
 
 # --- 在系統啟動時，一次性載入 Thick mode 翻譯機 ---
 try:
-    oracledb.init_oracle_client(lib_dir=r"C:\instantclient_19_30")
+    oracledb.init_oracle_client(lib_dir=r"C:\instantclient_19_30\instantclient_19_30")
 except Exception as e:
     # 這裡捕捉例外，防止 Streamlit 重整時重複載入報錯
     pass
@@ -135,7 +135,7 @@ if __name__ == '__main__':
         try:
             with conn.cursor() as cur:
                 # 換成 Oracle 專用的查詢版本語法
-                cur.execute("SELECT * FROM v$version FETCH FIRST 1 ROWS ONLY")
+                cur.execute("SELECT * FROM v$version WHERE ROWNUM = 1")
                 db_version = cur.fetchone()
                 print(f"ℹ️  資料庫版本: {db_version[0]}")
         except Exception as e:

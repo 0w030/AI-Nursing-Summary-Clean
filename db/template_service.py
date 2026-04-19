@@ -69,7 +69,9 @@ import os
 import json
 from pypdf import PdfReader
 from docx import Document
-from openpyxl import load_workbook
+import easyocr
+from PIL import Image
+import io
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "local_data", "app_local.db")
@@ -196,32 +198,36 @@ def extract_text_from_txt(txt_file):
         return None, f"TXT 提取失敗: {str(e)}"
 
 
-def extract_text_from_excel(excel_file):
+def extract_text_from_image(image_file):
     """
-    從 Excel 文檔中提取文本
+    從圖片文件中提取文本（使用 EasyOCR 識別）
     
     參數:
-        excel_file: 上傳的 Excel 文件對象
+        image_file: 上傳的圖片文件對象 (JPG 或 PNG)
     
     返回:
         提取的文本內容，失敗時返回 None 和錯誤信息
     """
     try:
-        workbook = load_workbook(excel_file)
-        text = ""
+        # 讀取上傳的圖片文件
+        image_data = image_file.getvalue()
+        image = Image.open(io.BytesIO(image_data))
         
-        for sheet_name in workbook.sheetnames:
-            sheet = workbook[sheet_name]
-            text += f"\n--- 工作表：{sheet_name} ---\n"
-            
-            for row in sheet.iter_rows(values_only=True):
-                row_text = " | ".join([str(cell) if cell is not None else "" for cell in row])
-                if row_text.strip():
-                    text += row_text + "\n"
+        # 初始化 EasyOCR 讀取器（支持繁體中文和英文）
+        reader = easyocr.Reader(['ch_tra', 'en'], gpu=False)
         
-        return text.strip(), None
+        # 進行 OCR 識別
+        results = reader.readtext(image)
+        
+        # 提取識別的文本
+        text = "\n".join([result[1] for result in results])
+        
+        return text.strip() if text.strip() else "(未能識別出文字)", None
     except Exception as e:
-        return None, f"Excel 提取失敗: {str(e)}"
+        return None, f"圖片 OCR 提取失敗: {str(e)}"
+
+
+
 
 
 def parse_uploaded_template(uploaded_file, file_type):
@@ -230,7 +236,7 @@ def parse_uploaded_template(uploaded_file, file_type):
     
     參數:
         uploaded_file: 上傳的文件對象
-        file_type: 檔案類型 ('pdf', 'docx', 'txt', 'json', 'excel')
+        file_type: 檔案類型 ('pdf', 'docx', 'txt', 'image')
     
     返回:
         (提取的文本內容, 錯誤信息) 的元組
@@ -241,77 +247,9 @@ def parse_uploaded_template(uploaded_file, file_type):
         return extract_text_from_docx(uploaded_file)
     elif file_type == 'txt':
         return extract_text_from_txt(uploaded_file)
-    elif file_type == 'excel':
-        return extract_text_from_excel(uploaded_file)
-    elif file_type == 'json':
-        try:
-            content = uploaded_file.getvalue().decode('utf-8')
-            data = json.loads(content)
-            
-            # 如果是多個模板的 JSON 格式
-            if isinstance(data, dict):
-                return json.dumps(data, ensure_ascii=False, indent=2), None
-            else:
-                return json.dumps(data, ensure_ascii=False, indent=2), None
-        except json.JSONDecodeError as e:
-            return None, f"JSON 解析失敗: {str(e)}"
-        except Exception as e:
-            return None, f"JSON 處理失敗: {str(e)}"
+    elif file_type == 'image':
+        return extract_text_from_image(uploaded_file)
     else:
         return None, f"不支援的檔案類型: {file_type}"
 
 
-def import_templates_from_json(json_content):
-    """
-    從 JSON 內容批量導入模板
-    期望的 JSON 格式：
-    {
-        "模板名稱1": "模板內容1",
-        "模板名稱2": "模板內容2"
-    }
-    或
-    [
-        {"name": "模板名稱1", "content": "模板內容1", "description": "說明"},
-        {"name": "模板名稱2", "content": "模板內容2", "description": "說明"}
-    ]
-    
-    返回:
-        成功導入的數量、失敗列表、錯誤信息
-    """
-    try:
-        data = json.loads(json_content)
-        success_count = 0
-        failed_list = []
-        
-        if isinstance(data, dict):
-            # 格式：{"名稱": "內容"}
-            for name, content in data.items():
-                if create_template(name, content):
-                    success_count += 1
-                else:
-                    failed_list.append(f"{name} (可能已存在或其他錯誤)")
-        
-        elif isinstance(data, list):
-            # 格式：[{"name": "名稱", "content": "內容", "description": "說明"}]
-            for item in data:
-                if isinstance(item, dict) and 'name' in item and 'content' in item:
-                    name = item['name']
-                    content = item['content']
-                    description = item.get('description', '')
-                    
-                    if create_template(name, content, description):
-                        success_count += 1
-                    else:
-                        failed_list.append(f"{name} (可能已存在或其他錯誤)")
-                else:
-                    failed_list.append("列表項目格式不正確")
-        
-        else:
-            return 0, [], "JSON 格式不正確"
-        
-        return success_count, failed_list, None
-    
-    except json.JSONDecodeError as e:
-        return 0, [], f"JSON 解析失敗: {str(e)}"
-    except Exception as e:
-        return 0, [], f"導入失敗: {str(e)}"

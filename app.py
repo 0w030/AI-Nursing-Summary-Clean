@@ -1200,8 +1200,8 @@ else:
             col_upload_text, col_upload_info = st.columns([3, 1])
             with col_upload_text:
                 uploaded_file = st.file_uploader(
-                    "選擇要上傳的文件 (.pdf, .docx, .xls, .xlsx, .txt, .json)：",
-                    type=['pdf', 'docx', 'xlsx', 'xls', 'txt', 'json']
+                    "選擇要上傳的文件 (.pdf, .docx, .txt, .jpg, .png)：",
+                    type=['pdf', 'docx', 'txt', 'jpg', 'png']
                 )
             
             with col_upload_info:
@@ -1217,9 +1217,8 @@ else:
                     'pdf': 'pdf',
                     'docx': 'docx',
                     'txt': 'txt',
-                    'json': 'json',
-                    'xlsx': 'excel',
-                    'xls': 'excel'
+                    'jpg': 'image',
+                    'png': 'image'
                 }
                 
                 file_type = file_type_mapping.get(file_ext, None)
@@ -1246,78 +1245,7 @@ else:
                         # 預覽提取的內容
                         st.subheader("第 2 步：預覽與編輯提取的內容")
                         
-                        # 如果是 JSON 檔案，嘗試解析為多個模板
-                        if file_type == 'json':
-                            st.info("💡 檢測到 JSON 檔案，嘗試批量導入")
-                            
-                            try:
-                                json_data = json.loads(extracted_content)
-                                
-                                if isinstance(json_data, dict):
-                                    template_count = len(json_data)
-                                    st.success(f"✅ 偵測到 {template_count} 個模板")
-                                    
-                                    # 顯示模板預覽
-                                    with st.expander("📋 查看模板列表", expanded=True):
-                                        for idx, (name, content) in enumerate(json_data.items(), 1):
-                                            preview_content = content[:100] + "..." if len(content) > 100 else content
-                                            st.write(f"{idx}. **{name}**：{preview_content}")
-                                    
-                                    # 批量導入按鈕
-                                    st.subheader("第 3 步：導入模板")
-                                    if st.button("🚀 批量導入所有模板", type="primary", use_container_width=True):
-                                        with st.spinner("正在導入模板..."):
-                                            success_count, failed_list, error = import_templates_from_json(extracted_content)
-                                        
-                                        if error:
-                                            st.error(f"❌ 導入出錯：{error}")
-                                        else:
-                                            st.success(f"✅ 成功導入 {success_count} 個模板！")
-                                            if failed_list:
-                                                st.warning(f"⚠️ 失敗 {len(failed_list)} 個：")
-                                                for fail_item in failed_list:
-                                                    st.write(f"  - {fail_item}")
-                                            st.cache_data.clear()
-                                            st.rerun()
-                                
-                                elif isinstance(json_data, list):
-                                    template_count = len(json_data)
-                                    st.success(f"✅ 偵測到 {template_count} 個模板")
-                                    
-                                    # 顯示模板預覽
-                                    with st.expander("📋 查看模板列表", expanded=True):
-                                        for idx, item in enumerate(json_data, 1):
-                                            if isinstance(item, dict) and 'name' in item:
-                                                name = item['name']
-                                                content = item.get('content', '')
-                                                preview_content = content[:100] + "..." if len(content) > 100 else content
-                                                st.write(f"{idx}. **{name}**：{preview_content}")
-                                    
-                                    # 批量導入按鈕
-                                    st.subheader("第 3 步：導入模板")
-                                    if st.button("🚀 批量導入所有模板", type="primary", use_container_width=True):
-                                        with st.spinner("正在導入模板..."):
-                                            success_count, failed_list, error = import_templates_from_json(extracted_content)
-                                        
-                                        if error:
-                                            st.error(f"❌ 導入出錯：{error}")
-                                        else:
-                                            st.success(f"✅ 成功導入 {success_count} 個模板！")
-                                            if failed_list:
-                                                st.warning(f"⚠️ 失敗 {len(failed_list)} 個：")
-                                                for fail_item in failed_list:
-                                                    st.write(f"  - {fail_item}")
-                                            st.cache_data.clear()
-                                            st.rerun()
-                                else:
-                                    st.warning("JSON 格式不符預期")
-                            
-                            except json.JSONDecodeError:
-                                st.warning("JSON 解析失敗，將作為單個模板導入")
-                                # 作為單個模板處理
-                                show_single_template_import_form(extracted_content)
-                        else:
-                            # 非 JSON 文件，作為單個模板導入
-                            show_single_template_import_form(extracted_content)
+                        # 作為單個模板導入
+                        show_single_template_import_form(extracted_content)
             else:
                 st.info("🔹 請上傳文件開始使用")

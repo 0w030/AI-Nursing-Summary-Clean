@@ -12,7 +12,7 @@ from datetime import datetime, time, timedelta
 from db.patient_service import get_patient_full_history, get_all_patients_overview
 from db.template_service import (
     get_all_templates, create_template, update_template,
-    parse_uploaded_template, import_templates_from_json
+    parse_uploaded_template
 )
 from ai.ai_summarizer import generate_nursing_summary
 from db.auth_service import (

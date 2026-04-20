@@ -69,7 +69,6 @@ import os
 import json
 from pypdf import PdfReader
 from docx import Document
-import easyocr
 from PIL import Image
 import io
 
@@ -209,15 +208,22 @@ def extract_text_from_image(image_file):
         提取的文本內容，失敗時返回 None 和錯誤信息
     """
     try:
+        # 延遲導入 easyocr，只在需要時才導入
+        import easyocr
+        import numpy as np
+        
         # 讀取上傳的圖片文件
         image_data = image_file.getvalue()
         image = Image.open(io.BytesIO(image_data))
         
+        # 將 PIL Image 轉換為 numpy array（easyocr 接受的格式）
+        image_array = np.array(image)
+        
         # 初始化 EasyOCR 讀取器（支持繁體中文和英文）
         reader = easyocr.Reader(['ch_tra', 'en'], gpu=False)
         
-        # 進行 OCR 識別
-        results = reader.readtext(image)
+        # 進行 OCR 識別 - 傳遞 numpy array 而非 PIL Image
+        results = reader.readtext(image_array)
         
         # 提取識別的文本
         text = "\n".join([result[1] for result in results])

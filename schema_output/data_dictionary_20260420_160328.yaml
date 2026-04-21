@@ -1,0 +1,243 @@
+database_type: oracle
+discovered_at: '2026-04-20T16:03:28.003308'
+schema_name: NIS_BB_ADAMAI
+tables:
+  ABNORMAL_TREATMENT:
+    columns:
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: true
+      max_length: 16
+      name: ID
+      nullable: false
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 20
+      name: INTERVENTION_ID
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 30
+      name: ABNORMAL_TYPE
+      nullable: false
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 1
+      name: STATUS
+      nullable: false
+      original_type: VARCHAR2
+    - comment: null
+      core_type: DateTime
+      is_indexed: false
+      is_primary_key: false
+      max_length: 11
+      name: LAST_UPDATE_TIME
+      nullable: false
+      original_type: TIMESTAMP(6)
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 15
+      name: LAST_UPDATE_USERID
+      nullable: false
+      original_type: VARCHAR2
+    - comment: null
+      core_type: Decimal
+      is_indexed: false
+      is_primary_key: false
+      max_length: 22
+      name: SEQUENCE
+      nullable: true
+      original_type: NUMBER
+    comment: null
+    row_count: 226
+    table_name: ABNORMAL_TREATMENT
+  APIINTERTABLE:
+    columns:
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 36
+      name: FORMID
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 36
+      name: RECORDPOID
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 20
+      name: FORMTYPE
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 1
+      name: STATUS
+      nullable: true
+      original_type: CHAR
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 20
+      name: CREATEUSERID
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 50
+      name: CREATEUSERNAME
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: DateTime
+      is_indexed: false
+      is_primary_key: false
+      max_length: 11
+      name: CREATEDATETIME
+      nullable: true
+      original_type: TIMESTAMP(6)
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 20
+      name: MODIFYUSERID
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 50
+      name: MODIFYUSERNAME
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: DateTime
+      is_indexed: false
+      is_primary_key: false
+      max_length: 11
+      name: MODIFYDATETIME
+      nullable: true
+      original_type: TIMESTAMP(6)
+    comment: null
+    row_count: 5
+    table_name: APIINTERTABLE
+  APILOG:
+    columns:
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 36
+      name: ID
+      nullable: false
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 200
+      name: APINAME
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 4000
+      name: INPUT
+      nullable: true
+      original_type: NCLOB
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 4000
+      name: RETSULT
+      nullable: true
+      original_type: NCLOB
+    - comment: null
+      core_type: DateTime
+      is_indexed: false
+      is_primary_key: false
+      max_length: 11
+      name: CALLTIME
+      nullable: true
+      original_type: TIMESTAMP(6)
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 15
+      name: CALLIP
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 200
+      name: CALLHOST
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 6
+      name: SYSMSGCODE
+      nullable: true
+      original_type: VARCHAR2
+    - comment: null
+      core_type: String
+      is_indexed: false
+      is_primary_key: false
+      max_length: 2000
+      name: SYSMSG
+      nullable: true
+      original_type: NVARCHAR2
+    - comment: null
+      core_type: Decimal
+      is_indexed: false
+      is_primary_key: false
+      max_length: 22
+      name: TOTALTIME
+      nullable: true
+      original_type: NUMBER
+    - comment: null
+      core_type: Decimal
+      is_indexed: false
+      is_primary_key: false
+      max_length: 22
+      name: DBTIME
+      nullable: true
+      original_type: NUMBER
+    comment: null
+    row_count: 21
+    table_name: APILOG

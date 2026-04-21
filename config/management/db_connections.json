@@ -1,0 +1,41 @@
+{
+  "connections": {
+    "hospital_test": {
+      "name": "hospital_test",
+      "db_type": "oracle",
+      "host": "192.168.1.100",
+      "port": 1521,
+      "database": "TEST_DB",
+      "username": "test_user",
+      "password": "",
+      "is_active": false,
+      "created_at": "2026-04-20T16:18:32.366944",
+      "last_modified": "2026-04-20T21:55:37.340514"
+    },
+    "oracle_from_env": {
+      "name": "oracle_from_env",
+      "db_type": "oracle",
+      "host": "172.16.100.71",
+      "port": 1521,
+      "database": "cs1",
+      "username": "NIS_BB_AdamAI",
+      "password": "NIS_BB_AdamAI",
+      "is_active": true,
+      "created_at": "2026-04-20T21:04:07.855686",
+      "last_modified": "2026-04-21T23:17:55.087239"
+    },
+    "postgres": {
+      "name": "postgres",
+      "db_type": "postgresql",
+      "host": "shinkansen.proxy.rlwy.net",
+      "port": 25940,
+      "database": "railway",
+      "username": "postgres",
+      "password": "pQntRrGNyqiuxLSwjFofptVsOZlakhba",
+      "is_active": false,
+      "created_at": "2026-04-21T21:36:36.768880",
+      "last_modified": "2026-04-21T21:44:33.348255"
+    }
+  },
+  "last_modified": "2026-04-21T23:17:55.087239"
+}

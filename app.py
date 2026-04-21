@@ -10,7 +10,10 @@ from datetime import datetime, time, timedelta
 
 # 引入後端模組
 from db.patient_service import get_patient_full_history, get_all_patients_overview
-from db.template_service import get_all_templates, create_template, update_template
+from db.template_service import (
+    get_all_templates, create_template, update_template,
+    parse_uploaded_template
+)
 from ai.ai_summarizer import generate_nursing_summary
 from db.auth_service import (
     authenticate_user, create_user, user_exists,
@@ -71,6 +74,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 TAB_LIBRARY = "模板庫管理"
 TAB_CREATE = "建立新模板"
+TAB_IMPORT = " 模板導入"
 
 # ==========================================
 # 輔助函數
@@ -92,6 +96,73 @@ def load_patient_list():
     return raw_list
 
 patients_list = load_patient_list()
+
+# =========================================================================
+# 模板導入相關輔助函數
+# =========================================================================
+def show_single_template_import_form(content):
+    """顯示單個模板導入表單"""
+    st.subheader("第 2 步：設定模板信息")
+    
+    with st.container():
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            template_name = st.text_input(
+                "模板名稱 *",
+                placeholder="例如：重大創傷急救紀錄",
+                help="此名稱會在模板庫中顯示"
+            )
+        
+        with col2:
+            template_description = st.text_input(
+                "模板說明 (選填)",
+                placeholder="例如：用於記錄重大創傷患者的急救流程",
+                help="簡短說明此模板的用途"
+            )
+    
+    st.subheader("第 2.5 步：編輯模板內容（可選）")
+    st.caption("您可以直接編輯從文件中提取的內容，或保持原樣")
+    
+    edited_content = st.text_area(
+        "模板內容 (Prompt)",
+        value=content,
+        height=350,
+        help="這是將用於 AI 推理的 System Prompt"
+    )
+    
+    st.divider()
+    st.subheader("第 3 步：確認導入")
+    
+    col_submit, col_cancel = st.columns(2)
+    
+    with col_submit:
+        if st.button("✅ 導入模板", type="primary", use_container_width=True):
+            if not template_name:
+                st.error("❌ 模板名稱不能為空！")
+            elif not edited_content:
+                st.error("❌ 模板內容不能為空！")
+            else:
+                with st.spinner("正在導入模板..."):
+                    success = create_template(template_name, edited_content, template_description)
+                
+                if success:
+                    st.success(f"✅ 模板「{template_name}」已成功導入！")
+                    st.balloons()
+                    st.cache_data.clear()
+                    st.session_state.import_extracted_content = ""
+                    st.session_state.import_uploaded_file = None
+                    # 自動導向到模板庫
+                    st.session_state.template_tab = TAB_LIBRARY
+                    st.rerun()
+                else:
+                    st.error("❌ 導入失敗：模板名稱可能已存在或其他錯誤")
+    
+    with col_cancel:
+        if st.button("❌ 取消", use_container_width=True):
+            st.session_state.import_extracted_content = ""
+            st.session_state.import_uploaded_file = None
+            st.rerun()
 
 # ==========================================
 # 登入與權限分流邏輯
@@ -804,7 +875,7 @@ else:
 
         tab = st.radio(
         "功能頁籤",
-        [TAB_LIBRARY, TAB_CREATE],
+        [TAB_LIBRARY, TAB_CREATE, TAB_IMPORT],
         horizontal=True,
         key="template_tab"
         )
@@ -1106,3 +1177,75 @@ else:
                         st.error("建立失敗 (名稱可能重複)。")
                 else:
                     st.warning("名稱與內容不得為空。")
+                    
+        # =======================
+        # Tab 3：模板導入
+        # =======================
+        elif st.session_state.template_tab == TAB_IMPORT:
+            
+            st.markdown("#### 📥 將模板從外部文件導入系統")
+            st.caption("支持從 PDF、Word、Excel、TXT、JSON 等檔案中提取內容並作為模板導入。")
+            
+            # ===== 初始化 session state =====
+            if "import_uploaded_file" not in st.session_state:
+                st.session_state.import_uploaded_file = None
+            if "import_extracted_content" not in st.session_state:
+                st.session_state.import_extracted_content = ""
+            if "import_file_type" not in st.session_state:
+                st.session_state.import_file_type = None
+            
+            st.subheader("第 1 步：上傳文件")
+            
+            # 文件上傳
+            col_upload_text, col_upload_info = st.columns([3, 1])
+            with col_upload_text:
+                uploaded_file = st.file_uploader(
+                    "選擇要上傳的文件 (.pdf, .docx, .txt, .jpg, .png)：",
+                    type=['pdf', 'docx', 'txt', 'jpg', 'png']
+                )
+            
+            with col_upload_info:
+                st.info("💡 提示：選擇包含模板 Prompt 內容的文件")
+            
+            # 文件處理邏輯
+            if uploaded_file is not None:
+                file_name = uploaded_file.name
+                file_ext = file_name.split('.')[-1].lower()
+                
+                # 映射副檔名到文件類型
+                file_type_mapping = {
+                    'pdf': 'pdf',
+                    'docx': 'docx',
+                    'txt': 'txt',
+                    'jpg': 'image',
+                    'png': 'image'
+                }
+                
+                file_type = file_type_mapping.get(file_ext, None)
+                
+                if file_type is None:
+                    st.error(f"❌ 不支持的文件類型：{file_ext}")
+                else:
+                    # 顯示上傳成功信息
+                    st.success(f"✅ 文件已上傳：{file_name} ({file_ext.upper()})")
+                    
+                    # 提取文件內容
+                    with st.spinner("正在提取文件內容..."):
+                        extracted_content, error_msg = parse_uploaded_template(uploaded_file, file_type)
+                    
+                    if error_msg:
+                        st.error(f"❌ 提取失敗：{error_msg}")
+                    else:
+                        st.session_state.import_extracted_content = extracted_content
+                        st.session_state.import_file_type = file_type
+                        st.session_state.import_uploaded_file = file_name
+                        
+                        st.divider()
+                        
+                        # 預覽提取的內容
+                        st.subheader("第 2 步：預覽與編輯提取的內容")
+                        
+                        # 作為單個模板導入
+                        show_single_template_import_form(extracted_content)
+            else:
+                st.info("🔹 請上傳文件開始使用")

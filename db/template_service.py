@@ -66,6 +66,11 @@
 # db/template_service.py
 import sqlite3
 import os
+import json
+from pypdf import PdfReader
+from docx import Document
+from PIL import Image
+import io
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "local_data", "app_local.db")
@@ -117,3 +122,140 @@ def update_template(name, content):
     finally:
         if 'conn' in locals() and conn:
             conn.close()
+
+
+# =========================================================================
+# 文件導入相關功能
+# =========================================================================
+
+def extract_text_from_pdf(pdf_file):
+    """
+    從 PDF 文件中提取文本
+    
+    參數:
+        pdf_file: 上傳的 PDF 文件對象
+    
+    返回:
+        提取的文本內容，失敗時返回 None 和錯誤信息
+    """
+    try:
+        pdf_reader = PdfReader(pdf_file)
+        text = ""
+        for page_num, page in enumerate(pdf_reader.pages):
+            text += f"\n--- 第 {page_num + 1} 頁 ---\n"
+            text += page.extract_text()
+        return text.strip(), None
+    except Exception as e:
+        return None, f"PDF 提取失敗: {str(e)}"
+
+
+def extract_text_from_docx(docx_file):
+    """
+    從 Word 文檔中提取文本
+    
+    參數:
+        docx_file: 上傳的 DOCX 文件對象
+    
+    返回:
+        提取的文本內容，失敗時返回 None 和錯誤信息
+    """
+    try:
+        doc = Document(docx_file)
+        text = ""
+        
+        # 提取段落文本
+        for para in doc.paragraphs:
+            if para.text.strip():
+                text += para.text + "\n"
+        
+        # 提取表格內容（如果有）
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = " | ".join([cell.text for cell in row.cells])
+                if row_text.strip():
+                    text += row_text + "\n"
+        
+        return text.strip(), None
+    except Exception as e:
+        return None, f"DOCX 提取失敗: {str(e)}"
+
+
+def extract_text_from_txt(txt_file):
+    """
+    從文本文件中提取內容
+    
+    參數:
+        txt_file: 上傳的文本文件對象
+    
+    返回:
+        文件內容，失敗時返回 None 和錯誤信息
+    """
+    try:
+        content = txt_file.getvalue().decode('utf-8')
+        return content.strip(), None
+    except Exception as e:
+        return None, f"TXT 提取失敗: {str(e)}"
+
+
+def extract_text_from_image(image_file):
+    """
+    從圖片文件中提取文本（使用 EasyOCR 識別）
+    
+    參數:
+        image_file: 上傳的圖片文件對象 (JPG 或 PNG)
+    
+    返回:
+        提取的文本內容，失敗時返回 None 和錯誤信息
+    """
+    try:
+        # 延遲導入 easyocr，只在需要時才導入
+        import easyocr
+        import numpy as np
+        
+        # 讀取上傳的圖片文件
+        image_data = image_file.getvalue()
+        image = Image.open(io.BytesIO(image_data))
+        
+        # 將 PIL Image 轉換為 numpy array（easyocr 接受的格式）
+        image_array = np.array(image)
+        
+        # 初始化 EasyOCR 讀取器（支持繁體中文和英文）
+        reader = easyocr.Reader(['ch_tra', 'en'], gpu=False)
+        
+        # 進行 OCR 識別 - 傳遞 numpy array 而非 PIL Image
+        results = reader.readtext(image_array)
+        
+        # 提取識別的文本
+        text = "\n".join([result[1] for result in results])
+        
+        return text.strip() if text.strip() else "(未能識別出文字)", None
+    except Exception as e:
+        return None, f"圖片 OCR 提取失敗: {str(e)}"
+
+
+
+
+
+def parse_uploaded_template(uploaded_file, file_type):
+    """
+    根據檔案類型解析上傳的模板文件
+    
+    參數:
+        uploaded_file: 上傳的文件對象
+        file_type: 檔案類型 ('pdf', 'docx', 'txt', 'image')
+    
+    返回:
+        (提取的文本內容, 錯誤信息) 的元組
+    """
+    if file_type == 'pdf':
+        return extract_text_from_pdf(uploaded_file)
+    elif file_type == 'docx':
+        return extract_text_from_docx(uploaded_file)
+    elif file_type == 'txt':
+        return extract_text_from_txt(uploaded_file)
+    elif file_type == 'image':
+        return extract_text_from_image(uploaded_file)
+    else:
+        return None, f"不支援的檔案類型: {file_type}"
+
+

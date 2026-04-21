@@ -248,7 +248,7 @@ def import_adm_order_er():
 if __name__ == '__main__':
     print("=== 開始執行資料匯入作業 ===")
     
-    執行所有匯入函數
+    #執行所有匯入函數
     import_lab_data_er()
     import_lab_order_er()
     import_vital_signs()

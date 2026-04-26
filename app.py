@@ -233,10 +233,12 @@ else:
         selected_label = st.selectbox("就醫清單：", options, index=0)
         
         target_encounter_id = None
+        target_patient_id = None
         selected_info = None
         if selected_label != "請選擇...":
             selected_info = next((p for p in patients_list if p['label'] == selected_label), None)
             target_encounter_id = selected_info['就醫序號']
+            target_patient_id = selected_info['病歷號']
             patient_id_display = selected_info['病歷號']
             st.success(f"已選定病患：{patient_id_display} / 就醫序號：{target_encounter_id}")
 
@@ -365,6 +367,37 @@ else:
                 combined_dt = datetime.combine(d1, t1)
                 start_dt_str = combined_dt.strftime("%Y%m%d%H%M%S")
 
+        # ===== 新增：模型選擇 UI =====
+        st.divider()
+        st.subheader("⚙️ AI 模型設置")
+        
+        col_model, col_info = st.columns([2, 3])
+        
+        with col_model:
+            model_choice = st.radio(
+                "選擇 AI 模型：",
+                options=["自動選擇 (優先本地)", "強制使用本地模型", "強制使用 Groq API"],
+                index=0,
+                help="本地模型快速離線 | Groq 高精度"
+            )
+        
+        # 模型映射
+        model_map = {
+            "自動選擇 (優先本地)": "auto",
+            "強制使用本地模型": "local",
+            "強制使用 Groq API": "groq"
+        }
+        selected_model_source = model_map[model_choice]
+        
+        with col_info:
+            if selected_model_source == "auto" or selected_model_source == "local":
+                st.info("🖥️ **本地模型**: Mistral 7B\n- ✅ 離線運作\n- ✅ 隱私保護\n- ⚡ 推理快速", icon="ℹ️")
+            else:
+                st.info("☁️ **Groq API**: Llama 3.3 70B\n- ✅ 高精度\n- ⚠️ 需要網路\n- 💰 計費", icon="ℹ️")
+        
+        st.divider()
+        # ===== 結束：模型選擇 UI =====
+
         # 6. 執行按鈕
         if target_encounter_id:
             if st.button(" 開始生成摘要", type="primary", use_container_width=True):
@@ -380,7 +413,7 @@ else:
                     
                 with st.spinner("正在分析資料並撰寫摘要..."):
                     p_data = get_patient_full_history(
-                        target_patient_id, 
+                        target_encounter_id, 
                         start_time=start_dt_str, 
                         schema_queries=selected_queries,
                         full_schema= hospital_schema
@@ -391,7 +424,8 @@ else:
                         p_data,
                         selected_template_name,
                         custom_system_prompt=st.session_state.preview_prompt,
-                        focus_areas=selected_focus_areas
+                        focus_areas=selected_focus_areas,
+                        model_source=selected_model_source
                     )
 
                     st.markdown("###  生成結果")

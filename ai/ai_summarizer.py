@@ -196,6 +196,16 @@ from data.metadata import get_chinese_name, translate_value
 
 load_dotenv()
 
+# ===== 本地模型支援 (新增) =====
+try:
+    from local_model_api_wrapper import get_local_client, is_local_model_available
+    from local_model_config import AIModelSource, MODEL_SELECTION_STRATEGY, FALLBACK_CONFIG
+    LOCAL_MODEL_AVAILABLE = True
+except ImportError:
+    print("⚠️ 本地模型支援未安裝，將使用 Groq")
+    LOCAL_MODEL_AVAILABLE = False
+# ===== 結束本地模型導入 =====
+
 # --- 新增：終極防彈版異常值判斷函數 ---
 def check_anomaly_v2(val, nh, nl):
     """
@@ -292,7 +302,26 @@ def auto_label_data(data_list):
     
     return "\n".join(result_lines)
 
-def generate_nursing_summary(encounter_id, patient_data, template_name, custom_system_prompt=None, focus_areas=None):
+def generate_nursing_summary(
+    encounter_id, 
+    patient_data, 
+    template_name, 
+    custom_system_prompt=None, 
+    focus_areas=None,
+    model_source: str = "auto"
+):
+    """
+    生成護理摘要 - 支持本地模型和 Groq
+    
+    Args:
+        encounter_id: 就醫序號
+        patient_data: 患者臨床資料
+        template_name: 模板名稱
+        custom_system_prompt: 自定系統提示
+        focus_areas: 關注項目
+        model_source: 模型來源 ("auto", "local", "groq")
+    """
+    
     # 因為 patient_data 現在是字串，我們直接檢查字串是否為空或包含錯誤訊息
     if not patient_data or "找不到" in patient_data:
         return "錯誤：無資料可分析。"
@@ -309,17 +338,98 @@ def generate_nursing_summary(encounter_id, patient_data, template_name, custom_s
         selected_system_prompt += f"\n\n**【⚠️ 特別指令：重點關注項目】**\n- {', '.join(focus_areas)}"
 
     # === 4. 建構 User Prompt ===
-    # 因為從 Oracle 撈出來的 patient_data 已經是排版好的字串，直接貼上即可！
     data_text = f"=== 就醫序號: {encounter_id} 急診臨床資料 ===\n\n{patient_data}"
 
-    # === [Debug] 打印發送給 Groq 的內容 ===
-    print("\n" + "🚀" + "="*20 + " GROQ API 請求內容預覽 " + "="*20)
-    print(f"[System Prompt]:\n{selected_system_prompt[:300]}...") 
-    # 只印前300字避免洗版
-    print(f"[User Data]:\n{data_text[:300]}...\n(資料過長，省略後續內容)") 
-    print("="*65 + "\n")
+    # === 5. 決定使用哪個 AI 模型 ===
+    selected_model = _select_ai_model(model_source)
+    
+    print("\n" + "🚀" + "="*50)
+    print(f"模型選擇: {selected_model.value.upper()}")
+    print("="*50)
+    
+    try:
+        if selected_model == AIModelSource.LOCAL and LOCAL_MODEL_AVAILABLE:
+            return _call_local_model(selected_system_prompt, data_text, encounter_id)
+        else:
+            return _call_groq_model(selected_system_prompt, data_text, encounter_id)
+    
+    except Exception as e:
+        # 如果啟用回退策略，嘗試另一個模型
+        if FALLBACK_CONFIG["enable_fallback"] and selected_model == AIModelSource.LOCAL:
+            print(f"\n⚠️ 本地模型失敗: {e}")
+            print("🔄 嘗試回退到 Groq...")
+            return _call_groq_model(selected_system_prompt, data_text, encounter_id)
+        else:
+            raise
 
-    # === 5. 呼叫 AI API (Groq) ===
+
+def _select_ai_model(model_source: str):
+    """
+    根據配置和可用性選擇模型
+    
+    Args:
+        model_source: "auto" (自動選擇) / "local" (強制本地) / "groq" (強制 Groq)
+    
+    Returns:
+        選定的模型來源
+    """
+    
+    if model_source == "groq":
+        return AIModelSource.GROQ
+    elif model_source == "local":
+        if not LOCAL_MODEL_AVAILABLE:
+            print("❌ 本地模型不可用，強制使用 Groq")
+            return AIModelSource.GROQ
+        return AIModelSource.LOCAL
+    elif model_source == "auto":
+        # 自動邏輯：優先本地，備用 Groq
+        if LOCAL_MODEL_AVAILABLE and is_local_model_available():
+            return AIModelSource.LOCAL
+        else:
+            return AIModelSource.GROQ
+    else:
+        print(f"⚠️ 未知模型源: {model_source}，使用預設值")
+        return MODEL_SELECTION_STRATEGY["default"]
+
+
+def _call_local_model(system_prompt: str, data_text: str, encounter_id: str) -> str:
+    """
+    使用本地 Mistral 7B 模型生成摘要
+    """
+    print("\n🖥️ 本地模型推理中...")
+    print(f"[System Prompt]:\n{system_prompt[:200]}...")
+    print(f"[Patient Data]:\n{data_text[:200]}...\n(資料省略)")
+    print("="*50 + "\n")
+    
+    try:
+        client = get_local_client()
+        result = client.chat_completion(
+            system_prompt=system_prompt,
+            user_message=data_text,
+            temperature=0.3
+        )
+        
+        summary = result["content"]
+        model_name = result.get("model", "mistral")
+        tokens_used = result["usage"]["completion_tokens"]
+        
+        print(f"✅ 本地模型成功生成 ({tokens_used} tokens)")
+        return summary
+        
+    except Exception as e:
+        print(f"❌ 本地模型錯誤: {str(e)}")
+        raise
+
+
+def _call_groq_model(system_prompt: str, data_text: str, encounter_id: str) -> str:
+    """
+    使用 Groq API 生成摘要 (原始邏輯)
+    """
+    print("\n☁️  Groq API 推理中...")
+    print(f"[System Prompt]:\n{system_prompt[:200]}...")
+    print(f"[Patient Data]:\n{data_text[:200]}...\n(資料省略)")
+    print("="*50 + "\n")
+    
     # ⚠️ 拔除舊的 st.secrets，改用 os.getenv 讀取 .env 的金鑰
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
@@ -334,12 +444,14 @@ def generate_nursing_summary(encounter_id, patient_data, template_name, custom_s
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": selected_system_prompt},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": data_text}
             ],
-            temperature=0.3, 
+            temperature=0.3,
         )
+        print("✅ Groq API 成功生成")
         return response.choices[0].message.content
+        
     except Exception as e:
-        print(f"❌ API Error: {e}")
+        print(f"❌ Groq API 錯誤: {e}")
         return f"AI 生成失敗: {e}"

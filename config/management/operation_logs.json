@@ -252,7 +252,107 @@
         "auto_type_map": true
       },
       "status": "success"
+    },
+    {
+      "timestamp": "2026-04-25T22:21:42.709704",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "postgres",
+        "mapping_count": 0
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-04-25T22:30:25.590146",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 0
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-04-25T22:32:29.117044",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 0
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-04-25T22:32:33.032689",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 0
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-04-25T22:50:36.020566",
+      "operation_type": "schema_import",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "tables": 305,
+        "fields": 3997,
+        "auto_type_map": true
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-04-26T13:31:58.280838",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "postgres",
+        "mapping_count": 0
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-03T16:17:46.357294",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-03T19:20:55.722117",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-03T19:20:57.073621",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
     }
   ],
-  "total": 24
+  "total": 33
 }

@@ -194,10 +194,9 @@ def get_all_patients_overview():
                     MIN(TO_CHAR(rv.RECORD_TIME, 'YYYYMMDDHH24MISS')) as earliest_time,
                     MAX(TO_CHAR(rv.RECORD_TIME, 'YYYYMMDDHH24MISS')) as latest_time
                 FROM RECORD r
-                LEFT JOIN RECORD_VERSION rv ON r.POID = rv.RECORD_POID
+                LEFT JOIN RECORD_VERSION rv ON r.POID = rv.RECORD_POID AND rv.STATUS = 'Y'
                 LEFT JOIN RECORD_DETAIL rd ON r.POID = rd.RECORD_POID
                 WHERE r.PATIENT_ID IS NOT NULL AND r.ENCOUNTER_ID IS NOT NULL
-                AND rv.STATUS = 'Y'
                 GROUP BY r.PATIENT_ID, r.ENCOUNTER_ID
                 ORDER BY MAX(rv.RECORD_TIME) DESC
             """
@@ -221,79 +220,157 @@ def get_all_patients_overview():
         if conn:
             conn.close()
 
-def get_patient_full_history(encounter_id, start_time=None, schema_queries=None, full_schema=None):
+def get_patient_full_history(encounter_id, start_time=None, end_time=None, schema_queries=None, connection_mappings=None):
     """
-    改為接收 encounter_id 作為唯一查詢目標，確保只撈取單次就醫的紀錄。
+    根據就醫序號和前端勾選的欄位，動態生成 SQL 並從資料庫撈取數據。
+    
+    改版：使用 config_manager 提供的電子辭典映射（connection_mappings），
+    而不依賴靜態的 full_schema JSON 檔案。
+    
+    Args:
+        encounter_id (str): 就醫序號，用於查詢單次就醫的紀錄
+        start_time (str, optional): 起始時間 (YYYYMMDDHHMMSS)
+        end_time (str, optional): 結束時間 (YYYYMMDDHHMMSS)
+        schema_queries (dict): 前端傳來的勾選字典，格式如 {"RECORD": ["ENCOUNTER_ID", "SIGNSTATUS"]}
+                              key: 表格名稱, value: 欄位的 db_column_name 清單
+        connection_mappings (dict): 來自 config_manager.get_connection_mappings() 的映射資料
+                                   格式為 {table_name: [FieldMapping, ...]}
+    
+    Returns:
+        dict: 包含不同類型資料的字典，格式如 {"nursing": [...], "vitals": [...], "labs": [...]}
     """
     conn = get_db_connection()
     if not conn:
-        return "無法連線到資料庫。"
+        print("無法建立連線，無法查詢病患資料。")
+        return {"nursing": [], "vitals": [], "labs": []}
 
-    if not schema_queries:
-        return "沒有選擇任何查詢欄位。"
+    # 初始化回傳結構，保持與 ai_summarizer 的相容性
+    patient_data = {
+        "nursing": [],
+        "vitals": [],
+        "labs": []
+    }
+
+    # 檢查是否都有收到必要資料
+    # 若 schema_queries 和 connection_mappings 都未提供，返回空資料
+    if not schema_queries or not connection_mappings:
+        print("沒有提供查詢條件或 Schema 映射。")
+        return patient_data
 
     try:
-        select_cols = []
-        table_aliases = {
-            "RECORD": "r",
-            "RECORD_VERSION": "rv",
-            "RECORD_DETAIL": "rd"
-        }
-
-        for table_name, cols in schema_queries.items():
-            alias = table_aliases.get(table_name, "")
-            for col in cols:
-                select_cols.append(f"{alias}.{col}")
-
-        select_clause = ", ".join(select_cols) if select_cols else "*"
-
-        # 升級：WHERE 條件改成認 ENCOUNTER_ID
-        sql = f"""
-            SELECT {select_clause}
-            FROM RECORD r
-            LEFT JOIN RECORD_VERSION rv ON r.POID = rv.RECORD_POID
-            LEFT JOIN RECORD_DETAIL rd ON r.POID = rd.RECORD_POID
-            WHERE r.ENCOUNTER_ID = :encounter_id
-            AND rv.STATUS = 'Y'
-        """
-
-        # 綁定變數
-        params = {"encounter_id": encounter_id}
-        
-        if start_time:
-            sql += " AND rv.RECORD_TIME >= TO_TIMESTAMP(:start_time, 'YYYYMMDDHH24MISS')"
-            params["start_time"] = start_time
-            
-        sql += " ORDER BY rv.RECORD_TIME DESC"
-
         with conn.cursor() as cur:
-            cur.execute(sql, params)
-            col_names = [desc[0] for desc in cur.description]
-            rows = cur.fetchall()
-
-            if not rows:
-                return f"找不到就醫序號 {encounter_id} 的護理紀錄。"
-
-            # 將標題改為顯示就醫序號
-            output_lines = [f"就醫序號：{encounter_id} 的護理紀錄\n" + "="*40]
-            
-            for row in rows:
-                row_dict = dict(zip(col_names, row))
-                record_block = []
-                for key, value in row_dict.items():
-                    if value is not None: 
-                        val_str = str(value).strip() 
-                        record_block.append(f"[{key}]: {val_str}")
+            # 遍歷使用者勾選的每一個資料表與欄位
+            for table_name, selected_db_columns in schema_queries.items():
+                if not selected_db_columns:
+                    continue
                 
-                output_lines.append("\n".join(record_block))
-                output_lines.append("-" * 30)
-
-            return "\n".join(output_lines)
+                # 檢查該表在 connection_mappings 中是否存在
+                if table_name not in connection_mappings:
+                    print(f"警告：Schema 映射中找不到資料表 {table_name}")
+                    continue
+                
+                table_field_mappings = connection_mappings[table_name]
+                
+                # 構建一個從 db_column_name 到 FieldMapping 的映射字典，方便查詢
+                mapping_dict = {fm.db_column_name: fm for fm in table_field_mappings}
+                
+                # 驗證所有選中的欄位都在映射中存在
+                valid_columns = []
+                for db_col in selected_db_columns:
+                    if db_col in mapping_dict:
+                        valid_columns.append(db_col)
+                    else:
+                        print(f"警告：{table_name}.{db_col} 在 Schema 映射中不存在，跳過此欄位")
+                
+                if not valid_columns:
+                    print(f"警告：{table_name} 沒有任何有效的欄位可查詢")
+                    continue
+                
+                # 組裝 SQL SELECT 子句
+                # 關鍵點：使用 db_column_name 而非系統欄位名稱來查詢
+                cols_str = ", ".join(valid_columns)
+                
+                # 根據不同的表格確定時間過濾欄位
+                # 此處假設主要查詢表使用 RECORD_TIME 作為時間欄位
+                time_column = None
+                for fm in table_field_mappings:
+                    if "TIME" in fm.db_column_name.upper() and fm.is_confirmed:
+                        time_column = fm.db_column_name
+                        break
+                
+                # 動態組裝 SQL 語法
+                sql = f"SELECT {cols_str} FROM {table_name} WHERE ENCOUNTER_ID = :encounter_id"
+                params = {"encounter_id": encounter_id}
+                
+                # 如果存在時間過濾，添加時間條件
+                if time_column:
+                    if start_time:
+                        sql += f" AND {time_column} >= TO_TIMESTAMP(:start_time, 'YYYYMMDDHH24MISS')"
+                        params["start_time"] = start_time
+                    
+                    if end_time:
+                        sql += f" AND {time_column} <= TO_TIMESTAMP(:end_time, 'YYYYMMDDHH24MISS')"
+                        params["end_time"] = end_time
+                    
+                    # 按時間排序
+                    sql += f" ORDER BY {time_column} DESC"
+                
+                print(f"[動態 SQL 執行]: {sql}")
+                print(f"[參數]: {params}")
+                
+                cur.execute(sql, params)
+                col_names = [desc[0] for desc in cur.description]
+                rows = cur.fetchall()
+                
+                # 將撈出的 Tuple 轉換成 Dictionary
+                formatted_rows = []
+                for row in rows:
+                    row_dict = {}
+                    for i, col_name in enumerate(col_names):
+                        # 根據 system_column_type 進行資料清洗
+                        if col_name in mapping_dict:
+                            field_type = mapping_dict[col_name].system_column_type
+                            value = row[i]
+                            
+                            # 簡單的資料清洗：去除空值和不必要的空格
+                            if value is not None:
+                                if field_type == "String":
+                                    value = str(value).strip()
+                                elif field_type in ["Integer", "Decimal"]:
+                                    try:
+                                        value = float(value) if "." in str(value) else int(value)
+                                    except (ValueError, TypeError):
+                                        value = None
+                        
+                        row_dict[col_name] = value
+                    
+                    formatted_rows.append(row_dict)
+                
+                # 根據表格名稱分類資料（保持與 ai_summarizer 的相容性）
+                if "RECORD" in table_name.upper():
+                    # 護理紀錄相關表
+                    patient_data["nursing"].extend(formatted_rows)
+                
+                elif "VITAL" in table_name.upper() or "GCS" in table_name.upper():
+                    # 生理監測相關表
+                    patient_data["vitals"].extend(formatted_rows)
+                
+                elif any(lab_key in table_name.upper() for lab_key in ["LAB", "ORDER", "RESULT"]):
+                    # 檢驗相關表
+                    patient_data["labs"].extend(formatted_rows)
+                
+                else:
+                    # 預設放入 nursing
+                    patient_data["nursing"].extend(formatted_rows)
+        
+        print(f"成功撈取資料表: {', '.join(schema_queries.keys())}")
+        return patient_data
 
     except Exception as e:
-        error_msg = f"❌ 查詢紀錄失敗: {e}"
-        print(error_msg)
-        return error_msg
+        print(f"❌ 資料庫查詢失敗: {e}")
+        import traceback
+        traceback.print_exc()
+        return patient_data
     finally:
         if conn:
             conn.close()

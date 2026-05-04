@@ -51,5 +51,39 @@
             "username": "postgres",
             "name": "123321"
         }
-    ]
+    ],
+    "chat.tools.terminal.autoApprove": {
+        "/^python -m pip install --upgrade pip$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^pip install easyocr pillow$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^Get-Item -Path \"db/template_service\\.py\", \"app\\.py\", \"test_template_import\\.py\" -ErrorAction SilentlyContinue$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python -m py_compile db/template_service\\.py app\\.py test_template_import\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^pip list \\| Select-String -Pattern \"easyocr\\|pillow\\|pypdf\\|python-docx\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python -m py_compile test_template_import\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python -m py_compile db/template_service\\.py; Write-Host \"Exit code: \\$LASTEXITCODE\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "/^python -m py_compile test_template_import\\.py; Write-Host \"Exit code: \\$LASTEXITCODE\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
 }

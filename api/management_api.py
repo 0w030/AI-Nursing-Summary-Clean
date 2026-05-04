@@ -312,22 +312,31 @@ async def list_schema_tables(
         raise HTTPException(status_code=403, detail="無權限存取")
     
     try:
-        mappings = config_manager.get_all_mappings()
-        tables = list(mappings.keys())
+        if not connection_name:
+            # 如果沒有指定connection_name，取當前活動連接
+            active_conn = config_manager.get_active_connection()
+            if not active_conn:
+                raise HTTPException(status_code=400, detail="沒有活動連接")
+            connection_name = active_conn.name
+        
+        conn_mappings = config_manager.get_connection_mappings(connection_name)
+        tables = list(conn_mappings.keys())
         
         return {
             "status": "success",
+            "connection": connection_name,
             "total": len(tables),
             "data": tables
         }
     except Exception as e:
-        logger.error(f"✗ 列表表格失敗: {e}")
+        logger.error(f"[ERROR] 列表表格失敗: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/schema/mappings/{table_name}")
 async def get_table_mappings(
     table_name: str,
+    connection_name: Optional[str] = Query(None),
     username: Optional[str] = Query(None)
 ):
     """獲取表格的所有欄位映射"""
@@ -336,15 +345,23 @@ async def get_table_mappings(
         raise HTTPException(status_code=403, detail="無權限存取")
     
     try:
-        mappings = config_manager.get_table_mappings(table_name)
+        if not connection_name:
+            # 如果沒有指定connection_name，取當前活動連接
+            active_conn = config_manager.get_active_connection()
+            if not active_conn:
+                raise HTTPException(status_code=400, detail="沒有活動連接")
+            connection_name = active_conn.name
+        
+        mappings = config_manager.get_table_mappings(connection_name, table_name)
         return {
             "status": "success",
+            "connection": connection_name,
             "table_name": table_name,
             "total": len(mappings),
             "data": [m.to_dict() for m in mappings]
         }
     except Exception as e:
-        logger.error(f"✗ 獲取映射失敗: {e}")
+        logger.error(f"[ERROR] 獲取映射失敗: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

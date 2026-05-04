@@ -32,6 +32,7 @@ def test_schema_import():
     try:
         imported_tables, imported_fields = config_manager.import_discovered_schema(
             discovered_schema,
+            connection_name='test_oracle',
             username='admin',
             auto_type_map=True
         )

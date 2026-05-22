@@ -193,8 +193,16 @@ from dotenv import load_dotenv
 from db.template_service import get_all_templates
 # 引入翻譯官：包含標籤翻譯(get_chinese_name) 與 數值翻譯(translate_value)
 from data.metadata import get_chinese_name, translate_value 
+from ai.rag_service import RAGService
 
 load_dotenv()
+
+# 初始化 RAG 服務 (全域單例)
+try:
+    rag_service = RAGService()
+except Exception as e:
+    print(f"⚠️ RAG 服務初始化失敗: {e}")
+    rag_service = None
 
 # ===== 本地模型支援 (新增) =====
 try:
@@ -340,6 +348,16 @@ def generate_nursing_summary(
     # === 4. 建構 User Prompt ===
     data_text = f"=== 就醫序號: {encounter_id} 急診臨床資料 ===\n\n{patient_data}"
 
+    # === 4.5. 新增 RAG 邏輯：檢索歷史範例 ===
+    if rag_service:
+        try:
+            similar_examples = rag_service.retrieve_similar_cases(patient_data)
+            if similar_examples:
+                selected_system_prompt += f"\n\n{similar_examples}"
+                print("🧠 [RAG] 成功提取歷史相似案例作為參考！")
+        except Exception as e:
+            print(f"⚠️ RAG 檢索失敗，將不使用歷史範例: {e}")
+
     # === 5. 決定使用哪個 AI 模型 ===
     selected_model = _select_ai_model(model_source)
     
@@ -398,7 +416,7 @@ def _call_local_model(system_prompt: str, data_text: str, encounter_id: str) -> 
     """
     print("\n🖥️ 本地模型推理中...")
     print(f"[System Prompt]:\n{system_prompt[:200]}...")
-    print(f"[Patient Data]:\n{data_text[:200]}...\n(資料省略)")
+    print(f"[Patient Data]:\n{data_text[:400]}...\n(資料省略)")
     print("="*50 + "\n")
     
     try:
@@ -427,7 +445,7 @@ def _call_groq_model(system_prompt: str, data_text: str, encounter_id: str) -> s
     """
     print("\n☁️  Groq API 推理中...")
     print(f"[System Prompt]:\n{system_prompt[:200]}...")
-    print(f"[Patient Data]:\n{data_text[:200]}...\n(資料省略)")
+    print(f"[Patient Data]:\n{data_text[:400]}...\n(資料省略)")
     print("="*50 + "\n")
     
     # ⚠️ 拔除舊的 st.secrets，改用 os.getenv 讀取 .env 的金鑰

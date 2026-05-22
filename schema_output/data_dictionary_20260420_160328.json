@@ -1,0 +1,308 @@
+{
+  "schema_name": "NIS_BB_ADAMAI",
+  "database_type": "oracle",
+  "discovered_at": "2026-04-20T16:03:28.003308",
+  "tables": {
+    "ABNORMAL_TREATMENT": {
+      "table_name": "ABNORMAL_TREATMENT",
+      "comment": null,
+      "row_count": 226,
+      "columns": [
+        {
+          "name": "ID",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": false,
+          "comment": null,
+          "max_length": 16,
+          "is_primary_key": true,
+          "is_indexed": false
+        },
+        {
+          "name": "INTERVENTION_ID",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 20,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "ABNORMAL_TYPE",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": false,
+          "comment": null,
+          "max_length": 30,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "STATUS",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": false,
+          "comment": null,
+          "max_length": 1,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "LAST_UPDATE_TIME",
+          "original_type": "TIMESTAMP(6)",
+          "core_type": "DateTime",
+          "nullable": false,
+          "comment": null,
+          "max_length": 11,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "LAST_UPDATE_USERID",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": false,
+          "comment": null,
+          "max_length": 15,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "SEQUENCE",
+          "original_type": "NUMBER",
+          "core_type": "Decimal",
+          "nullable": true,
+          "comment": null,
+          "max_length": 22,
+          "is_primary_key": false,
+          "is_indexed": false
+        }
+      ]
+    },
+    "APIINTERTABLE": {
+      "table_name": "APIINTERTABLE",
+      "comment": null,
+      "row_count": 5,
+      "columns": [
+        {
+          "name": "FORMID",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 36,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "RECORDPOID",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 36,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "FORMTYPE",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 20,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "STATUS",
+          "original_type": "CHAR",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 1,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "CREATEUSERID",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 20,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "CREATEUSERNAME",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 50,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "CREATEDATETIME",
+          "original_type": "TIMESTAMP(6)",
+          "core_type": "DateTime",
+          "nullable": true,
+          "comment": null,
+          "max_length": 11,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "MODIFYUSERID",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 20,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "MODIFYUSERNAME",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 50,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "MODIFYDATETIME",
+          "original_type": "TIMESTAMP(6)",
+          "core_type": "DateTime",
+          "nullable": true,
+          "comment": null,
+          "max_length": 11,
+          "is_primary_key": false,
+          "is_indexed": false
+        }
+      ]
+    },
+    "APILOG": {
+      "table_name": "APILOG",
+      "comment": null,
+      "row_count": 21,
+      "columns": [
+        {
+          "name": "ID",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": false,
+          "comment": null,
+          "max_length": 36,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "APINAME",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 200,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "INPUT",
+          "original_type": "NCLOB",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 4000,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "RETSULT",
+          "original_type": "NCLOB",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 4000,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "CALLTIME",
+          "original_type": "TIMESTAMP(6)",
+          "core_type": "DateTime",
+          "nullable": true,
+          "comment": null,
+          "max_length": 11,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "CALLIP",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 15,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "CALLHOST",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 200,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "SYSMSGCODE",
+          "original_type": "VARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 6,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "SYSMSG",
+          "original_type": "NVARCHAR2",
+          "core_type": "String",
+          "nullable": true,
+          "comment": null,
+          "max_length": 2000,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "TOTALTIME",
+          "original_type": "NUMBER",
+          "core_type": "Decimal",
+          "nullable": true,
+          "comment": null,
+          "max_length": 22,
+          "is_primary_key": false,
+          "is_indexed": false
+        },
+        {
+          "name": "DBTIME",
+          "original_type": "NUMBER",
+          "core_type": "Decimal",
+          "nullable": true,
+          "comment": null,
+          "max_length": 22,
+          "is_primary_key": false,
+          "is_indexed": false
+        }
+      ]
+    }
+  }
+}

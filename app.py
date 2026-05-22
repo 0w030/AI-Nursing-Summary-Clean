@@ -9,7 +9,7 @@ from datetime import datetime, time, timedelta
 # from feedback_component import show_feedback_ui
 
 # 引入後端模組
-from db.patient_service import get_patient_full_history, get_all_patients_overview
+from db.patient_service import get_patient_full_history
 from db.template_service import (
     get_all_templates, create_template, update_template,
     parse_uploaded_template
@@ -20,12 +20,17 @@ from db.auth_service import (
     get_all_users, search_users, get_user_count,
     update_user, reset_password, soft_delete_user, restore_user
 )
+<<<<<<< HEAD
 from ai.rag_service import RAGService
 try:
     rag_service = RAGService()
 except Exception as e:
     st.error(f"RAG 服務初始化失敗: {e}")
     rag_service = None
+=======
+from services.permission_service import User, Role
+
+>>>>>>> origin/sql_test
 
 # --- ⚠️ 關鍵新增：在這裡啟動 .env 讀取器 ---
 load_dotenv()
@@ -35,19 +40,14 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
+    st.session_state.user = None
 
-@st.cache_data
-# ⚠️ 注意：路徑請用斜線 (/)，並確認這裡的檔名是你剛建好的 Oracle JSON 檔
-def load_hospital_schema(filepath="config/schemas/hospital_test_schema.json"):
-    """讀取醫院的 JSON 藍圖設定檔"""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        st.error(f"找不到設定檔：{filepath}")
-        return None
+# --- 初始化頁面導航狀態 ---
+if "current_app_page" not in st.session_state:
+    st.session_state.current_app_page = "main"  # "main" 或 "management"
 
-hospital_schema = load_hospital_schema()
+# --- 引入配置管理器（取代靜態 JSON） ---
+from services.config_manager import config_manager
 
 # --- 設定網頁 ---
 st.set_page_config(page_title="AI 醫療模板系統", layout="wide", page_icon="🏥")
@@ -61,6 +61,19 @@ if "last_template_name" not in st.session_state:
 
 if "last_style_option" not in st.session_state:
     st.session_state.last_style_option = None
+
+# ===== 摘要生成器步驟追蹤 =====
+if "summary_step" not in st.session_state:
+    st.session_state.summary_step = 1  # 1: 病患選取, 2: 參數設定與生成
+
+if "selected_patient" not in st.session_state:
+    st.session_state.selected_patient = None
+
+if "patient_search_keyword" not in st.session_state:
+    st.session_state.patient_search_keyword = ""
+
+if "patient_search_requested" not in st.session_state:
+    st.session_state.patient_search_requested = False
 
 # ===== 全域預設（避免 NameError）=====
 selected_info = None
@@ -90,17 +103,458 @@ def format_time_str(raw_time):
     s = str(raw_time)
     return f"{s[:4]}-{s[4:6]}-{s[6:8]} {s[8:10]}:{s[10:12]}"
 
-@st.cache_data(ttl=60)
-def load_patient_list():
-    raw_list = get_all_patients_overview()
-    for p in raw_list:
-        p['最早紀錄_顯示'] = format_time_str(p['最早紀錄'])
-        p['最晚紀錄_顯示'] = format_time_str(p['最晚紀錄'])
-        # 升級：在選單上同時顯示病歷號與就醫序號
-        p['label'] = f"病歷號: {p['病歷號']} | 就醫序號: {p['就醫序號']} (共 {p['資料筆數']} 筆)"
-    return raw_list
+def get_first_matching_field(record: dict, candidates: list):
+    for name in candidates:
+        for key in record.keys():
+            if key.upper() == name:
+                return record[key]
+    return None
 
-patients_list = load_patient_list()
+
+def format_time_value(raw_value):
+    if not raw_value:
+        return "20260101000000"
+    if isinstance(raw_value, datetime):
+        return raw_value.strftime("%Y%m%d%H%M%S")
+    raw_text = str(raw_value).strip()
+    digits = "".join(ch for ch in raw_text if ch.isdigit())
+    if len(digits) >= 14:
+        return digits[:14]
+    return raw_text
+
+
+def create_test_patient_payload(row_dict: dict):
+    patient_id = get_first_matching_field(row_dict, [
+        "PATIENT_ID", "PATID", "PID", "PATIENTID", "PERSON_ID"
+    ]) or "測試病患"
+    encounter_id = get_first_matching_field(row_dict, [
+        "ENCOUNTER_ID", "ENCOUNTERID", "VISIT_ID", "VISITID", "ADMISSION_ID"
+    ]) or "0000000000"
+    name_value = get_first_matching_field(row_dict, [
+        "NAME", "PAT_NAME", "FULL_NAME", "PATIENT_NAME", "CUSTOMER_NAME"
+    ]) or "測試病患"
+
+    time_candidates = [
+        "RECORD_TIME", "CREATE_TIME", "PROCDTTM", "ADMISSION_TIME", "DISCHARGE_TIME",
+        "TIMESTAMP", "DATE_TIME", "EVENT_TIME"
+    ]
+    time_values = []
+    for candidate in time_candidates:
+        raw_time = get_first_matching_field(row_dict, [candidate])
+        if raw_time:
+            time_values.append(format_time_value(raw_time))
+
+    if time_values:
+        earliest_time = min(time_values)
+        latest_time = max(time_values)
+    else:
+        earliest_time = latest_time = "20260101000000"
+
+    doc_count = get_first_matching_field(row_dict, [
+        "DOC_COUNT", "RECORD_COUNT", "COUNT", "資料筆數"
+    ])
+    if doc_count is None:
+        doc_count = 1
+    try:
+        doc_count = int(doc_count)
+    except Exception:
+        doc_count = 1
+
+    return {
+        "病歷號": str(patient_id),
+        "就醫序號": str(encounter_id),
+        "姓名": str(name_value),
+        "資料筆數": doc_count,
+        "最早紀錄": earliest_time,
+        "最晚紀錄": latest_time,
+        "最早紀錄_顯示": format_time_str(earliest_time),
+        "最晚紀錄_顯示": format_time_str(latest_time),
+        "label": f"病歷號: {patient_id} | 就醫序號: {encounter_id} (共 {doc_count} 筆)"
+    }
+
+
+def load_test_patient_list_dynamic(table_name: str = "NISHBED"):
+    """從當前活動連線動態載入前 10 筆病患測試資料。"""
+    active_connection = config_manager.get_active_connection()
+    if not active_connection:
+        return []
+
+    db_type = (active_connection.db_type or "").lower()
+    host = active_connection.host
+    port = active_connection.port
+    database = active_connection.database
+    user = active_connection.username
+    password = active_connection.password
+
+    conn = None
+    cursor = None
+    try:
+        if db_type == "oracle":
+            try:
+                import oracledb
+            except ImportError:
+                st.error("Oracle 驅動尚未安裝，無法連接 Oracle 資料庫。")
+                return []
+            dsn = oracledb.makedsn(host, port, service_name=database)
+            conn = oracledb.connect(user=user, password=password, dsn=dsn)
+            query = f"SELECT * FROM {table_name} WHERE ROWNUM <= 10"
+        elif db_type in ["postgresql", "postgres"]:
+            try:
+                import psycopg2
+            except ImportError:
+                st.error("PostgreSQL 驅動尚未安裝，無法連接 PostgreSQL 資料庫。")
+                return []
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                dbname=database,
+                user=user,
+                password=password
+            )
+            query = f"SELECT * FROM {table_name} LIMIT 10"
+        elif db_type == "sqlite":
+            import sqlite3
+            conn = sqlite3.connect(database)
+            query = f"SELECT * FROM {table_name} LIMIT 10"
+        else:
+            st.error(f"尚未支援的資料庫類型：{active_connection.db_type}")
+            return []
+
+        cursor = conn.cursor()
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        columns = [col[0] for col in cursor.description] if cursor.description else []
+
+        patient_list = []
+        for row in rows:
+            row_dict = dict(zip(columns, row))
+            patient_list.append(create_test_patient_payload(row_dict))
+
+        return patient_list
+
+    except Exception as error:
+        st.error(f"病患清單載入失敗，請檢查資料庫連線與表格設定。錯誤訊息：{error}")
+        return []
+
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+        except Exception:
+            pass
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+
+# =========================================================================
+# 摘要生成器步驟函式
+# =========================================================================
+def render_patient_selection():
+    """步驟一：病患篩選與選取"""
+    st.header("步驟一：選擇病患與就醫紀錄")
+
+    patients_list = load_test_patient_list_dynamic()
+    if not patients_list:
+        st.error("無法取得病患清單，請確認當前資料庫連線是否已啟用。")
+        return
+
+    # 搜尋功能
+    with st.form(key="patient_search_form"):
+        search_keyword = st.text_input(
+            "搜尋病患",
+            value=st.session_state.patient_search_keyword,
+            placeholder="輸入病歷號、就醫序號或姓名關鍵字...",
+            help="支援病歷號、就醫序號或姓名的部分匹配搜尋"
+        )
+        search_button = st.form_submit_button("執行查詢")
+
+    if search_button:
+        st.session_state.patient_search_keyword = search_keyword
+        st.session_state.patient_search_requested = True
+
+    if st.session_state.patient_search_requested:
+        keyword = st.session_state.patient_search_keyword.strip()
+        filtered_patients = [
+            p for p in patients_list
+            if keyword.lower() in str(p.get('病歷號', '')).lower()
+            or keyword.lower() in str(p.get('就醫序號', '')).lower()
+            or keyword.lower() in str(p.get('姓名', '')).lower()
+            or keyword.lower() in str(p.get('label', '')).lower()
+        ]
+        st.write(f"找到 {len(filtered_patients)} 位病患")
+
+        if not filtered_patients:
+            st.warning("未找到符合條件的病患，請確認輸入後點擊「執行查詢」。")
+            return
+    else:
+        filtered_patients = patients_list
+        if search_keyword:
+            st.info("輸入關鍵字後請點擊「執行查詢」，以便系統進行查詢。")
+        else:
+            st.info("請輸入搜尋關鍵字或直接從下方清單選擇病患。")
+
+    # 病患清單展示
+    if len(filtered_patients) <= 50:  # 小量數據使用 selectbox
+        options = ["請選擇病患..."] + [p['label'] for p in filtered_patients]
+        selected_label = st.selectbox("病患清單", options, index=0)
+
+        selected_patient = None
+        if selected_label != "請選擇病患...":
+            selected_patient = next((p for p in filtered_patients if p['label'] == selected_label), None)
+    else:  # 大量數據使用 dataframe
+        # 準備顯示數據
+        display_data = []
+        for p in filtered_patients:
+            display_data.append({
+                '病歷號': p['病歷號'],
+                '姓名': p.get('姓名', '未知'),
+                '就醫序號': p['就醫序號'],
+                '資料筆數': p['資料筆數'],
+                '最早紀錄': p['最早紀錄_顯示'],
+                '最晚紀錄': p['最晚紀錄_顯示']
+            })
+
+        df = pd.DataFrame(display_data)
+        st.dataframe(df, use_container_width=True)
+
+        # 手動輸入選擇
+        selected_patient_id = st.text_input(
+            "請輸入欲選取的就醫序號",
+            help="從上方表格中選擇對應的就醫序號"
+        )
+
+        selected_patient = None
+        if selected_patient_id:
+            selected_patient = next((p for p in filtered_patients if str(p['就醫序號']) == selected_patient_id), None)
+            if not selected_patient:
+                st.error("無效的就醫序號，請重新輸入。")
+
+    # 確認選取按鈕
+    if selected_patient:
+        st.success(f"已選取病患：{selected_patient['病歷號']} / 就醫序號：{selected_patient['就醫序號']}")
+        st.write("請按下方按鈕確認選取並進入下一步。")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("確定選擇並下一步", type="primary", use_container_width=True):
+                st.session_state.selected_patient = selected_patient
+                st.session_state.summary_step = 2
+                st.rerun()
+
+        with col2:
+            if st.button("重新搜尋", use_container_width=True):
+                st.session_state.patient_search_keyword = ""
+                st.session_state.patient_search_requested = False
+
+
+def render_summary_config():
+    """步驟二：生成參數設定與執行"""
+    st.header("步驟二：設定生成參數")
+    
+    # 檢查是否已選取病患
+    if not st.session_state.selected_patient:
+        st.error("請先返回步驟一選取病患。")
+        if st.button("返回病患選取"):
+            st.session_state.summary_step = 1
+            st.rerun()
+        return
+    
+    selected_patient = st.session_state.selected_patient
+    
+    # 顯示已選取的病患資訊
+    st.subheader("已選取的病患資訊")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("病歷號", selected_patient['病歷號'])
+    with col2:
+        st.metric("就醫序號", str(selected_patient['就醫序號']))
+    with col3:
+        st.metric("資料筆數", selected_patient['資料筆數'])
+    
+    st.write(f"最早紀錄：{selected_patient['最早紀錄_顯示']}")
+    st.write(f"最晚紀錄：{selected_patient['最晚紀錄_顯示']}")
+    
+    if st.button("重新選擇病患"):
+        st.session_state.selected_patient = None
+        st.session_state.summary_step = 1
+        st.rerun()
+    
+    st.divider()
+    
+    # 設定最早時間
+    earliest_dt = None
+    if selected_patient.get("最早紀錄"):
+        raw_time = selected_patient["最早紀錄"]
+        earliest_dt = datetime.strptime(raw_time, "%Y%m%d%H%M%S")
+    
+    # 檢查資料庫連接
+    active_connection = config_manager.get_active_connection()
+    if not active_connection:
+        st.warning("請先至「管理中控台」設定並啟用資料庫連接。在完成連接設置前，無法生成摘要。")
+        return
+    
+    connection_mappings = config_manager.get_connection_mappings(active_connection.name)
+    if not connection_mappings or len(connection_mappings) == 0:
+        st.warning(f"連接「{active_connection.name}」尚無 Schema 映射。請先至「管理中控台」進行 Schema 同步。")
+        return
+    
+    # 資料來源範圍選擇
+    st.subheader("資料來源範圍")
+    selected_queries = {}
+    
+    for table_name, field_mappings in connection_mappings.items():
+        if not field_mappings:
+            continue
+        
+        # 特殊過濾規則：NISHBED 表
+        if table_name.upper() == "NISHBED":
+            nishbed_core_fields = {
+                "PATIENT_ID", "BED_ID", "ADMISSION_TIME", "DISCHARGE_TIME", 
+                "WARD_ID", "CLINICAL_STATUS", "VITAL_SIGNS", "CARE_PLAN", 
+                "PROCEDURE_LOG", "DIAGNOSIS"
+            }
+            filtered_mappings = [
+                fm for fm in field_mappings
+                if fm.db_column_name.upper() in nishbed_core_fields and fm.is_confirmed
+            ]
+            if len(filtered_mappings) > 10:
+                filtered_mappings = filtered_mappings[:10]
+        else:
+            filtered_mappings = [fm for fm in field_mappings if fm.is_confirmed]
+        
+        if not filtered_mappings:
+            continue
+        
+        with st.expander(f"資料表：{table_name}", expanded=True):
+            selected_cols = []
+            cols = st.columns(3)
+            
+            for i, field_mapping in enumerate(filtered_mappings):
+                db_col_name = field_mapping.db_column_name
+                system_col_type = field_mapping.system_column_type
+                
+                checkbox_label = f"{db_col_name} ({system_col_type})"
+                if field_mapping.is_ai_suggested:
+                    checkbox_label += " [AI建議]"
+                else:
+                    checkbox_label += " [已確認]"
+                
+                is_checked = cols[i % 3].checkbox(
+                    label=checkbox_label,
+                    value=False,
+                    key=f"chk_{table_name}_{db_col_name}"
+                )
+                
+                if is_checked:
+                    selected_cols.append(db_col_name)
+            
+            if selected_cols:
+                selected_queries[table_name] = selected_cols
+    
+    # 模板選擇
+    st.subheader("摘要模板選擇")
+    db_templates = get_all_templates()
+    template_names = list(db_templates.keys())
+    
+    if not template_names:
+        st.error("資料庫中沒有模板，請聯繫管理員。")
+        return
+    
+    selected_template_name = st.selectbox("請選擇適用情境", template_names, index=0)
+    
+    # 呈現風格
+    style_option = st.radio("呈現風格", ["列點式 (Bullet Points)", "短文式 (Narrative)"], horizontal=True)
+    
+    # Prompt 處理
+    if (selected_template_name != st.session_state.last_template_name or 
+        style_option != st.session_state.last_style_option):
+        base_prompt = db_templates[selected_template_name]
+        style_instruction = (
+            "\n\n【格式要求】：請整合為一篇流暢的短文，禁止使用列點。"
+            if style_option == "短文式 (Narrative)"
+            else "\n\n【格式要求】：請務必使用列點方式呈現，保持條理。"
+        )
+        st.session_state.preview_prompt = base_prompt + style_instruction
+        st.session_state.last_template_name = selected_template_name
+        st.session_state.last_style_option = style_option
+    
+    # Prompt 編輯
+    st.subheader("Prompt 編輯")
+    edited_prompt = st.text_area(
+        "系統提示詞",
+        value=st.session_state.preview_prompt,
+        height=200
+    )
+    st.session_state.preview_prompt = edited_prompt
+    
+    # 關注項目
+    st.subheader("重點關注項目")
+    focus_options = ["生命徵象趨勢", "檢驗報告異常值", "護理處置經過", "病患主訴", "管路狀況", "意識狀態(GCS)"]
+    
+    default_focus = []
+    if "會診" in selected_template_name:
+        default_focus = ["檢驗報告異常值", "生命徵象趨勢"]
+    elif "交班" in selected_template_name:
+        default_focus = ["護理處置經過", "意識狀態(GCS)"]
+    elif "出院" in selected_template_name:
+        default_focus = ["護理處置經過", "生命徵象趨勢"]
+    
+    selected_focus_areas = []
+    cols = st.columns(3)
+    for i, option in enumerate(focus_options):
+        if cols[i % 3].checkbox(option, value=option in default_focus):
+            selected_focus_areas.append(option)
+    
+    # 時間篩選
+    st.subheader("時間篩選")
+    use_time_filter = st.toggle("啟用時間篩選", help="只分析指定時間之後的記錄")
+    start_dt_str = None
+    
+    if use_time_filter:
+        default_datetime = earliest_dt if earliest_dt else datetime.now() - timedelta(days=1)
+        c1, c2 = st.columns(2)
+        d1 = c1.date_input("開始日期", default_datetime.date())
+        t1 = c2.time_input("開始時間", default_datetime.time())
+        combined_dt = datetime.combine(d1, t1)
+        start_dt_str = combined_dt.strftime("%Y%m%d%H%M%S")
+    
+    # 生成按鈕
+    if not selected_queries:
+        st.warning("請至少選擇一個資料來源的欄位。")
+        return
+    
+    if st.button("開始生成摘要", type="primary", use_container_width=True):
+        load_dotenv()
+        if not os.getenv("GROQ_API_KEY"):
+            st.error("未設定 API 金鑰")
+            return
+        
+        with st.spinner("正在分析資料並生成摘要..."):
+            active_conn = config_manager.get_active_connection()
+            active_mappings = config_manager.get_connection_mappings(active_conn.name)
+            
+            p_data = get_patient_full_history(
+                selected_patient['就醫序號'],
+                start_time=start_dt_str,
+                schema_queries=selected_queries,
+                connection_mappings=active_mappings
+            )
+            
+            summary = generate_nursing_summary(
+                selected_patient['就醫序號'],
+                p_data,
+                selected_template_name,
+                custom_system_prompt=st.session_state.preview_prompt,
+                focus_areas=selected_focus_areas
+            )
+            
+            st.markdown("### 生成結果")
+            st.markdown("---")
+            st.markdown(summary)
+
 
 # =========================================================================
 # 模板導入相關輔助函數
@@ -190,6 +644,9 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.role = user_role
+                # 將字符串角色轉換為 Role 枚舉對象
+                user_role_enum = Role(user_role)
+                st.session_state.user = User(username=username, role=user_role_enum, is_active=True)
                 st.rerun() # 重新整理網頁，進入系統
             else:
                 st.error("帳號或密碼錯誤！")
@@ -199,10 +656,28 @@ else:
     with st.sidebar:
         st.title(" 醫療摘要系統")
         st.markdown(f"👤 登入者: **{st.session_state.username}** ({st.session_state.role})")
+        
+        # 頁面選擇（使用 key 來記住選擇）
+        st.markdown("---")
+        st.subheader("應用導航")
+        
+        current_page = st.radio(
+            "選擇功能",
+            ["主應用", "管理中控台"],
+            label_visibility="collapsed",
+            key="app_page_choice",
+            index=0  # 預設選擇「主應用」
+        )
+        
+        if current_page == "管理中控台":
+            st.switch_page("pages/management_dashboard.py")
+        
+        st.markdown("---")
         if st.button("登出", use_container_width=True):
             st.session_state.logged_in = False
+            st.session_state.user = None
             st.rerun()
-            
+        
         st.divider()
 
         # 🔑 權限分流核心邏輯
@@ -213,7 +688,7 @@ else:
             # Admin 可以訪問管理員功能
             app_mode = st.radio(
                 "請選擇功能模式：",
-                [" 摘要生成器", " 模板設計師", " 👥 人員管理"],
+                [" 摘要生成器", " 模板設計師", " 👥 人員管理", "測試視窗"],
                 index=0
             )
         else:
@@ -231,6 +706,7 @@ else:
     # ==============================================================================
     if app_mode == " 摘要生成器":
         st.header(" AI 急診病程摘要生成")
+<<<<<<< HEAD
         
         # 1. 選擇病患 (升級版)
         st.subheader("1. 選擇病患與就醫紀錄")
@@ -246,47 +722,27 @@ else:
             target_patient_id = selected_info['病歷號']
             patient_id_display = selected_info['病歷號']
             st.success(f"已選定病患：{patient_id_display} / 就醫序號：{target_encounter_id}")
+=======
+>>>>>>> origin/sql_test
 
-        earliest_dt = None
+        # 添加步驟指示器
+        step_names = ["病患選取", "參數設定與生成"]
+        current_step_name = step_names[st.session_state.summary_step - 1]
 
-        if selected_info and selected_info.get("最早紀錄"):
-            raw_time = selected_info["最早紀錄"]
-            earliest_dt = datetime.strptime(raw_time, "%Y%m%d%H%M%S")
+        # 顯示進度條
+        progress = (st.session_state.summary_step - 1) / len(step_names)
+        st.progress(progress, text=f"步驟 {st.session_state.summary_step}: {current_step_name}")
 
-            # --- 資料表層級勾選 (1.5) ---
-            st.subheader(f"1.5 選擇資料來源範圍 ({hospital_schema['hospital_name']})")
-            
-            selected_queries = {} 
-            
-            if hospital_schema:
-                for table in hospital_schema["tables"]:
-                    table_name = table["table_name"]
-                    display_name = table["display_name"]
-                    
-                    with st.expander(f" {display_name} ({table_name})", expanded=True):
-                        selected_cols = []
-                        cols = st.columns(3) 
-                        
-                        for i, col_info in enumerate(table["columns"]):
-                            col_name = col_info["col_name"]
-                            label = col_info["label"]
-                            default_checked = col_info.get("default_checked", False)
-                            
-                            is_checked = cols[i % 3].checkbox(
-                                label=f"{label} ({col_name})", 
-                                value=default_checked, 
-                                key=f"chk_{table_name}_{col_name}"
-                            )
-                            
-                            if is_checked:
-                                selected_cols.append(col_name)
-                        
-                        if selected_cols:
-                            selected_queries[table_name] = selected_cols
+        # 重置按鈕
+        if st.button("🔄 重新開始", help="重置所有選擇並從頭開始"):
+            st.session_state.summary_step = 1
+            st.session_state.selected_patient = None
+            st.session_state.patient_search_keyword = ""
+            st.rerun()
 
-            if not selected_queries:
-                st.warning(" 請至少勾選一個資料表的欄位。")
+        st.divider()
 
+<<<<<<< HEAD
         # 2. 選擇模板
         st.subheader("2. 選擇摘要模板")
         db_templates = get_all_templates()
@@ -454,6 +910,13 @@ else:
                                 st.error(f"儲存記憶失敗: {e}")
                         else:
                             st.warning("RAG 服務未啟動，無法儲存學習記憶。")
+=======
+        # 根據當前步驟渲染對應的介面
+        if st.session_state.summary_step == 1:
+            render_patient_selection()
+        elif st.session_state.summary_step == 2:
+            render_summary_config()
+>>>>>>> origin/sql_test
 
 
     # ==============================================================================
@@ -1306,3 +1769,214 @@ else:
                         show_single_template_import_form(extracted_content)
             else:
                 st.info("🔹 請上傳文件開始使用")
+
+    # ==============================================================================
+    # 模式 D：測試視窗 (Admin 專用)
+    # ==============================================================================
+    elif app_mode == "測試視窗":
+        # 路由守衛：確保只有 admin 可以訪問
+        if st.session_state.role != "admin":
+            st.error("403 禁止訪問：您沒有權限訪問此頁面！")
+            st.info("只有管理員（Admin）可以訪問測試視窗功能。")
+            st.stop()
+
+        st.header("資料庫測試視窗")
+        st.info("此功能允許管理員直接測試目前啟用的資料庫連線，並執行基本查詢操作。")
+
+        # 檢查活動連線
+        active_connection = config_manager.get_active_connection()
+
+        if not active_connection:
+            st.warning("目前沒有啟用的資料庫連線。請先至「管理中控台」設定並啟用資料庫連線。")
+            st.stop()
+
+        # 顯示連線資訊
+        st.subheader("當前連線資訊")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("連線名稱", active_connection.name)
+        with col2:
+            st.metric("資料庫類型", active_connection.db_type.upper())
+        with col3:
+            st.metric("主機位址", f"{active_connection.host}:{active_connection.port}")
+
+        # 獲取該連線的 Schema 映射
+        connection_mappings = config_manager.get_connection_mappings(active_connection.name)
+
+        if not connection_mappings:
+            st.warning(f"連線「{active_connection.name}」尚未進行 Schema 同步，無法執行測試操作。")
+            st.stop()
+
+        # 取得已同步的資料表列表
+        available_tables = list(connection_mappings.keys())
+        if not available_tables:
+            st.warning("該連線沒有已同步的資料表。")
+            st.stop()
+
+        st.subheader("資料庫測試操作")
+
+        # 資料表選擇下拉選單
+        selected_table = st.selectbox(
+            "選擇要測試的資料表：",
+            available_tables,
+            help="僅顯示已同步且存在於電子辭典的資料表"
+        )
+
+        # 測試按鈕區域
+        st.markdown("### 測試操作")
+
+        col_test1, col_test2, col_test3 = st.columns(3)
+
+        # 按鈕 A：測試基礎連線
+        with col_test1:
+            if st.button("測試基礎連線", use_container_width=True):
+                with st.spinner("正在測試連線..."):
+                    try:
+                        # 建立資料庫連線
+                        if active_connection.db_type.lower() == "oracle":
+                            import oracledb
+                            dsn = oracledb.makedsn(active_connection.host, active_connection.port, service_name=active_connection.database)
+                            conn = oracledb.connect(
+                                user=active_connection.username,
+                                password=active_connection.password,
+                                dsn=dsn
+                            )
+                            # 執行簡單的 Ping 測試
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT 1 FROM DUAL")
+                            result = cursor.fetchone()
+                            cursor.close()
+                            conn.close()
+
+                        elif active_connection.db_type.lower() == "postgresql":
+                            import psycopg2
+                            conn = psycopg2.connect(
+                                host=active_connection.host,
+                                port=active_connection.port,
+                                database=active_connection.database,
+                                user=active_connection.username,
+                                password=active_connection.password
+                            )
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT 1")
+                            result = cursor.fetchone()
+                            cursor.close()
+                            conn.close()
+
+                        elif active_connection.db_type.lower() == "sqlite":
+                            import sqlite3
+                            conn = sqlite3.connect(active_connection.database)
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT 1")
+                            result = cursor.fetchone()
+                            cursor.close()
+                            conn.close()
+
+                        else:
+                            raise ValueError(f"不支援的資料庫類型: {active_connection.db_type}")
+
+                        st.success("✅ 連線測試成功！資料庫可正常連通。")
+
+                    except Exception as e:
+                        st.error(f"❌ 連線測試失敗：{str(e)}")
+
+        # 按鈕 B：查詢資料表總筆數
+        with col_test2:
+            if st.button("查詢總筆數", use_container_width=True):
+                with st.spinner("正在查詢資料表總筆數..."):
+                    try:
+                        # 建立資料庫連線
+                        if active_connection.db_type.lower() == "oracle":
+                            import oracledb
+                            dsn = oracledb.makedsn(active_connection.host, active_connection.port, service_name=active_connection.database)
+                            conn = oracledb.connect(
+                                user=active_connection.username,
+                                password=active_connection.password,
+                                dsn=dsn
+                            )
+                            cursor = conn.cursor()
+                            cursor.execute(f"SELECT COUNT(*) FROM {selected_table}")
+                            result = cursor.fetchone()
+                            cursor.close()
+                            conn.close()
+
+                        elif active_connection.db_type.lower() == "postgresql":
+                            import psycopg2
+                            conn = psycopg2.connect(
+                                host=active_connection.host,
+                                port=active_connection.port,
+                                database=active_connection.database,
+                                user=active_connection.username,
+                                password=active_connection.password
+                            )
+                            cursor = conn.cursor()
+                            cursor.execute(f"SELECT COUNT(*) FROM {selected_table}")
+                            result = cursor.fetchone()
+                            cursor.close()
+                            conn.close()
+
+                        elif active_connection.db_type.lower() == "sqlite":
+                            import sqlite3
+                            conn = sqlite3.connect(active_connection.database)
+                            cursor = conn.cursor()
+                            cursor.execute(f"SELECT COUNT(*) FROM {selected_table}")
+                            result = cursor.fetchone()
+                            cursor.close()
+                            conn.close()
+
+                        else:
+                            raise ValueError(f"不支援的資料庫類型: {active_connection.db_type}")
+
+                        count = result[0] if result else 0
+                        st.success(f"✅ 資料表 {selected_table} 總共有 {count:,} 筆資料。")
+
+                    except Exception as e:
+                        st.error(f"❌ 查詢失敗：{str(e)}")
+
+        # 按鈕 C：提取前 10 筆資料
+        with col_test3:
+            if st.button("提取前10筆", use_container_width=True):
+                with st.spinner("正在提取前10筆資料..."):
+                    try:
+                        # 建立資料庫連線
+                        if active_connection.db_type.lower() == "oracle":
+                            import oracledb
+                            dsn = oracledb.makedsn(active_connection.host, active_connection.port, service_name=active_connection.database)
+                            conn = oracledb.connect(
+                                user=active_connection.username,
+                                password=active_connection.password,
+                                dsn=dsn
+                            )
+                            cursor = conn.cursor()
+                            query = f'SELECT * FROM (SELECT * FROM "{selected_table}") WHERE ROWNUM <= 10'
+                            st.info(f"調試：執行 SQL 語句：{query}")  # 調試用
+                            cursor.execute(query)
+                            columns = [desc[0] for desc in cursor.description]
+                            rows = cursor.fetchall()
+                            cursor.close()
+                            conn.close()
+
+                        elif active_connection.db_type.lower() == "sqlite":
+                            import sqlite3
+                            conn = sqlite3.connect(active_connection.database)
+                            cursor = conn.cursor()
+                            cursor.execute(f"SELECT * FROM {selected_table} LIMIT 10")
+                            columns = [desc[0] for desc in cursor.description]
+                            rows = cursor.fetchall()
+                            cursor.close()
+                            conn.close()
+
+                        else:
+                            raise ValueError(f"不支援的資料庫類型: {active_connection.db_type}")
+
+                        # 顯示結果
+                        if rows:
+                            import pandas as pd
+                            df = pd.DataFrame(rows, columns=columns)
+                            st.success(f"✅ 成功提取 {selected_table} 的前 {len(rows)} 筆資料：")
+                            st.dataframe(df, use_container_width=True)
+                        else:
+                            st.info(f"資料表 {selected_table} 為空，沒有資料可顯示。")
+
+                    except Exception as e:
+                        st.error(f"❌ 提取資料失敗：{str(e)}")

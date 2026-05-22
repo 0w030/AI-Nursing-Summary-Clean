@@ -1,0 +1,145 @@
+=== 資料字典 ===
+資料庫: HospitalDemo
+型別: sqlite
+時間: 2026-04-20T07:31:46.084697
+表格總數: 5
+
+【表格】 ADMISSION_RECORD
+  實體映射: Visit (信心: 60%)
+  行數: 2
+  欄位數: 7
+
+    • VISIT_ID
+      型別: TEXT → String
+      語意映射: visit_id (信心: 56%)
+    • PT_ID
+      型別: TEXT → String [NOT_NULL]
+      語意映射: patient_id (信心: 90%)
+    • ADMIT_DT
+      型別: TEXT → String [NOT_NULL]
+      語意映射: admission_date (信心: 90%)
+    • DISCHARGE_DT
+      型別: TEXT → String
+      語意映射: discharge_date (信心: 90%)
+    • DEPARTMENT
+      型別: TEXT → String
+      語意映射: department (信心: 90%)
+    • WARD_NO
+      型別: TEXT → String
+      語意映射: ward (信心: 90%)
+    • BED_NO
+      型別: TEXT → String
+      語意映射: bed (信心: 90%)
+
+【表格】 LABORATORY_RESULT
+  實體映射: LabResult (信心: 100%)
+  行數: 3
+  欄位數: 7
+
+    • LAB_ID
+      型別: TEXT → String
+    • PT_ID
+      型別: TEXT → String [NOT_NULL]
+      語意映射: patient_id (信心: 90%)
+    • TEST_NAME
+      型別: TEXT → String [NOT_NULL]
+      語意映射: test_name (信心: 90%)
+    • RESULT_VALUE
+      型別: TEXT → String
+      語意映射: test_result (信心: 90%)
+    • REFERENCE_RANGE
+      型別: TEXT → String
+      語意映射: reference_range (信心: 70%)
+    • UNIT
+      型別: TEXT → String
+      語意映射: unit (信心: 35%)
+    • TEST_DATETIME
+      型別: TEXT → String [NOT_NULL]
+      語意映射: test_datetime (信心: 70%)
+
+【表格】 NURSING_NOTES
+  實體映射: NursingRecord (信心: 68%)
+  行數: 2
+  欄位數: 5
+
+    • NOTE_ID
+      型別: TEXT → String
+      語意映射: record_id (信心: 35%)
+    • PT_ID
+      型別: TEXT → String [NOT_NULL]
+      語意映射: patient_id (信心: 90%)
+    • RECORD_DATETIME
+      型別: TEXT → String [NOT_NULL]
+      語意映射: record_datetime (信心: 56%)
+    • NOTE_CONTENT
+      型別: TEXT → String
+      語意映射: record_content (信心: 70%)
+    • NURSE_STAFF_ID
+      型別: TEXT → String
+      語意映射: visit_id (信心: 42%)
+
+【表格】 PATIENT_INFO
+  實體映射: Patient (信心: 90%)
+  行數: 2
+  欄位數: 9
+
+    • PT_ID
+      型別: TEXT → String
+      語意映射: patient_id (信心: 90%)
+    • PT_NAME_CN
+      型別: TEXT → String [NOT_NULL]
+      語意映射: patient_name_zh (信心: 98%)
+    • PT_NAME_EN
+      型別: TEXT → String
+      語意映射: patient_name_en (信心: 90%)
+    • NATIONAL_ID
+      型別: TEXT → String
+      語意映射: national_id (信心: 35%)
+    • BIRTH_DAY
+      型別: TEXT → String
+      語意映射: birth_date (信心: 90%)
+    • GENDER
+      型別: TEXT → String
+      語意映射: gender (信心: 90%)
+    • PHONE_NO
+      型別: TEXT → String
+      語意映射: phone (信心: 56%)
+    • ADDRESS
+      型別: TEXT → String
+      語意映射: address (信心: 90%)
+    • CREATED_AT
+      型別: TEXT → String
+      語意映射: discharge_date (信心: 42%)
+
+【表格】 VITAL_SIGN_RECORD
+  實體映射: NursingRecord (信心: 30%)
+  行數: 3
+  欄位數: 9
+
+    • SIGN_ID
+      型別: TEXT → String
+      語意映射: vital_id (信心: 35%)
+    • PT_ID
+      型別: TEXT → String [NOT_NULL]
+      語意映射: patient_id (信心: 90%)
+    • MEASURE_TIME
+      型別: TEXT → String [NOT_NULL]
+      語意映射: measurement_datetime (信心: 90%)
+    • HR
+      型別: REAL → Float
+      語意映射: heart_rate (信心: 90%)
+    • SBP
+      型別: REAL → Float
+      語意映射: systolic_bp (信心: 90%)
+    • DBP
+      型別: REAL → Float
+      語意映射: diastolic_bp (信心: 90%)
+    • BODY_TEMP
+      型別: REAL → Float
+      語意映射: body_temperature (信心: 35%)
+    • RR
+      型別: REAL → Float
+      語意映射: respiratory_rate (信心: 90%)
+    • SPO2
+      型別: REAL → Float
+      語意映射: oxygen_saturation (信心: 90%)

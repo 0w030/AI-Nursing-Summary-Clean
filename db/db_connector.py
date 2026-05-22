@@ -54,7 +54,7 @@ import psycopg2
 from dotenv import load_dotenv
 
 # 讀取 .env 檔案中的環境變數
-load_dotenv()
+# load_dotenv()
 
 # def get_db_connection():
 #     """

@@ -20,7 +20,12 @@ from db.auth_service import (
     get_all_users, search_users, get_user_count,
     update_user, reset_password, soft_delete_user, restore_user
 )
-
+from ai.rag_service import RAGService
+try:
+    rag_service = RAGService()
+except Exception as e:
+    st.error(f"RAG 服務初始化失敗: {e}")
+    rag_service = None
 
 # --- ⚠️ 關鍵新增：在這裡啟動 .env 讀取器 ---
 load_dotenv()
@@ -428,9 +433,27 @@ else:
                         model_source=selected_model_source
                     )
 
-                    st.markdown("###  生成結果")
+                    st.markdown("###  生成結果 (請確認並可自由修改)")
                     st.markdown("---")
-                    st.markdown(summary)
+                    
+                    # 讓使用者可以編輯生成的摘要
+                    final_summary = st.text_area("摘要內容", value=summary, height=400)
+                    
+                    # 加入一個儲存按鈕
+                    if st.button("💾 確認並儲存摘要 (這將幫助 AI 學習)", type="primary"):
+                        if rag_service:
+                            try:
+                                # 把「原始病歷(p_data)」和「最終修改後的摘要(final_summary)」存起來
+                                rag_service.add_memory(
+                                    encounter_id=target_encounter_id,
+                                    raw_data=p_data,
+                                    final_summary=final_summary
+                                )
+                                st.success("✅ 摘要已儲存！AI 已經學習了您的修改，下次會表現得更好。")
+                            except Exception as e:
+                                st.error(f"儲存記憶失敗: {e}")
+                        else:
+                            st.warning("RAG 服務未啟動，無法儲存學習記憶。")
 
 
     # ==============================================================================

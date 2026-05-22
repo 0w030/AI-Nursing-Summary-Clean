@@ -20,17 +20,13 @@ from db.auth_service import (
     get_all_users, search_users, get_user_count,
     update_user, reset_password, soft_delete_user, restore_user
 )
-<<<<<<< HEAD
+from services.permission_service import Role, User
 from ai.rag_service import RAGService
 try:
     rag_service = RAGService()
 except Exception as e:
     st.error(f"RAG 服務初始化失敗: {e}")
     rag_service = None
-=======
-from services.permission_service import User, Role
-
->>>>>>> origin/sql_test
 
 # --- ⚠️ 關鍵新增：在這裡啟動 .env 讀取器 ---
 load_dotenv()
@@ -706,24 +702,6 @@ else:
     # ==============================================================================
     if app_mode == " 摘要生成器":
         st.header(" AI 急診病程摘要生成")
-<<<<<<< HEAD
-        
-        # 1. 選擇病患 (升級版)
-        st.subheader("1. 選擇病患與就醫紀錄")
-        options = ["請選擇..."] + [p['label'] for p in patients_list]
-        selected_label = st.selectbox("就醫清單：", options, index=0)
-        
-        target_encounter_id = None
-        target_patient_id = None
-        selected_info = None
-        if selected_label != "請選擇...":
-            selected_info = next((p for p in patients_list if p['label'] == selected_label), None)
-            target_encounter_id = selected_info['就醫序號']
-            target_patient_id = selected_info['病歷號']
-            patient_id_display = selected_info['病歷號']
-            st.success(f"已選定病患：{patient_id_display} / 就醫序號：{target_encounter_id}")
-=======
->>>>>>> origin/sql_test
 
         # 添加步驟指示器
         step_names = ["病患選取", "參數設定與生成"]
@@ -742,181 +720,11 @@ else:
 
         st.divider()
 
-<<<<<<< HEAD
-        # 2. 選擇模板
-        st.subheader("2. 選擇摘要模板")
-        db_templates = get_all_templates()
-        template_names = list(db_templates.keys())
-        
-        if not template_names:
-            st.error("資料庫中沒有模板，請先切換到「模板設計師」建立模板！")
-            st.stop()
-            
-        selected_template_name = st.selectbox("請選擇適用情境：", template_names, index=0)
-
-        # 3. 呈現風格
-        style_option = st.radio("呈現風格：", ["列點式 (Bullet Points)", "短文式 (Narrative)"], horizontal=True)
-
-        # ===== 模板或呈現風格變更時，自動刷新 Prompt =====
-        if (
-            selected_template_name != st.session_state.last_template_name
-            or style_option != st.session_state.last_style_option
-        ):
-            base_prompt = db_templates[selected_template_name]
-
-            style_instruction = (
-                "\n\n【格式要求】：請整合為一篇流暢的短文，禁止使用列點。"
-                if style_option == "短文式 (Narrative)"
-                else "\n\n【格式要求】：請務必使用列點方式呈現，保持條理。"
-            )
-
-            st.session_state.preview_prompt = base_prompt + style_instruction
-            st.session_state.last_template_name = selected_template_name
-            st.session_state.last_style_option = style_option
-
-        # ===== Prompt 預覽 / 修改 =====
-        st.subheader("3. Prompt 預覽與編輯")
-        edited_prompt = st.text_area(
-            "即將送入 AI 的 System Prompt（可直接修改）",
-            value=st.session_state.preview_prompt,
-            height=300
-        )
-        st.session_state.preview_prompt = edited_prompt
-
-        # 4. 關注點
-        st.subheader("4. 重點關注項目")
-        st.write("請勾選 **重點關注項目** (AI 將加強分析)：")
-        
-        focus_options = ["生命徵象趨勢", "檢驗報告異常值", "護理處置經過", "病患主訴", "管路狀況", "意識狀態(GCS)"]
-        
-        default_focus = []
-        if "會診" in selected_template_name:
-            default_focus = ["檢驗報告異常值", "生命徵象趨勢"]
-        elif "交班" in selected_template_name:
-            default_focus = ["護理處置經過", "意識狀態(GCS)"]
-        elif "出院" in selected_template_name:
-            default_focus = ["護理處置經過", "生命徵象趨勢"]
-        
-        selected_focus_areas = []
-        cols = st.columns(3)
-        for i, option in enumerate(focus_options):
-            if cols[i % 3].checkbox(option, value=option in default_focus):
-                selected_focus_areas.append(option)
-
-        # 5. 起始時間篩選
-        is_expanded = st.session_state.get("time_toggle_state", False)
-        
-        with st.expander("護理紀錄時間篩選 (選填)", expanded=is_expanded):
-            # 加上 key="time_toggle_state" 讓系統記住狀態
-            use_time_filter = st.toggle(
-                "啟用時間篩選", 
-                key="time_toggle_state",
-                help="開啟後，AI 只會讀取指定時間點之後的護理紀錄"
-            )
-            start_dt_str = None
-
-            if use_time_filter:
-                default_datetime = earliest_dt if earliest_dt else datetime.now() - timedelta(days=1)
-                default_date = default_datetime.date()
-                default_time = default_datetime.time()
-
-                st.caption("請選擇要從哪一個時間點開始讀取紀錄：")
-                c1, c2 = st.columns(2)
-                d1 = c1.date_input("開始日期", default_date)
-                t1 = c2.time_input("開始時間", default_time)
-
-                combined_dt = datetime.combine(d1, t1)
-                start_dt_str = combined_dt.strftime("%Y%m%d%H%M%S")
-
-        # ===== 新增：模型選擇 UI =====
-        st.divider()
-        st.subheader("⚙️ AI 模型設置")
-        
-        col_model, col_info = st.columns([2, 3])
-        
-        with col_model:
-            model_choice = st.radio(
-                "選擇 AI 模型：",
-                options=["自動選擇 (優先本地)", "強制使用本地模型", "強制使用 Groq API"],
-                index=0,
-                help="本地模型快速離線 | Groq 高精度"
-            )
-        
-        # 模型映射
-        model_map = {
-            "自動選擇 (優先本地)": "auto",
-            "強制使用本地模型": "local",
-            "強制使用 Groq API": "groq"
-        }
-        selected_model_source = model_map[model_choice]
-        
-        with col_info:
-            if selected_model_source == "auto" or selected_model_source == "local":
-                st.info("🖥️ **本地模型**: Mistral 7B\n- ✅ 離線運作\n- ✅ 隱私保護\n- ⚡ 推理快速", icon="ℹ️")
-            else:
-                st.info("☁️ **Groq API**: Llama 3.3 70B\n- ✅ 高精度\n- ⚠️ 需要網路\n- 💰 計費", icon="ℹ️")
-        
-        st.divider()
-        # ===== 結束：模型選擇 UI =====
-
-        # 6. 執行按鈕
-        if target_encounter_id:
-            if st.button(" 開始生成摘要", type="primary", use_container_width=True):
-                
-                load_dotenv()
-                if not os.getenv("GROQ_API_KEY"):
-                    st.error("未設定 API Key")
-                    st.stop()
-                    
-                if not selected_queries:
-                    st.error("請至少選擇一個資料來源的欄位。")
-                    st.stop()
-                    
-                with st.spinner("正在分析資料並撰寫摘要..."):
-                    p_data = get_patient_full_history(
-                        target_encounter_id, 
-                        start_time=start_dt_str, 
-                        schema_queries=selected_queries,
-                        full_schema= hospital_schema
-                    )
-
-                    summary = generate_nursing_summary(
-                        target_encounter_id,
-                        p_data,
-                        selected_template_name,
-                        custom_system_prompt=st.session_state.preview_prompt,
-                        focus_areas=selected_focus_areas,
-                        model_source=selected_model_source
-                    )
-
-                    st.markdown("###  生成結果 (請確認並可自由修改)")
-                    st.markdown("---")
-                    
-                    # 讓使用者可以編輯生成的摘要
-                    final_summary = st.text_area("摘要內容", value=summary, height=400)
-                    
-                    # 加入一個儲存按鈕
-                    if st.button("💾 確認並儲存摘要 (這將幫助 AI 學習)", type="primary"):
-                        if rag_service:
-                            try:
-                                # 把「原始病歷(p_data)」和「最終修改後的摘要(final_summary)」存起來
-                                rag_service.add_memory(
-                                    encounter_id=target_encounter_id,
-                                    raw_data=p_data,
-                                    final_summary=final_summary
-                                )
-                                st.success("✅ 摘要已儲存！AI 已經學習了您的修改，下次會表現得更好。")
-                            except Exception as e:
-                                st.error(f"儲存記憶失敗: {e}")
-                        else:
-                            st.warning("RAG 服務未啟動，無法儲存學習記憶。")
-=======
         # 根據當前步驟渲染對應的介面
         if st.session_state.summary_step == 1:
             render_patient_selection()
         elif st.session_state.summary_step == 2:
             render_summary_config()
->>>>>>> origin/sql_test
 
 
     # ==============================================================================

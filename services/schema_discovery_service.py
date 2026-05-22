@@ -31,6 +31,9 @@ class ColumnInfo:
     nullable: bool = True
     max_length: Optional[int] = None
     comment: str = ""
+    sample_values: Optional[List[str]] = None
+    numeric_min: Optional[float] = None
+    numeric_max: Optional[float] = None
 
 
 class SchemaDiscoveryService:
@@ -291,17 +294,50 @@ class SchemaDiscoveryService:
             nullable = row[2] == 'Y'
             max_length = row[3] if row[3] else None
             
+            # 嘗試採集樣本值和數值範圍
+            sample_values = self._get_sample_values_oracle(cursor, table_name, col_name)
+            numeric_min, numeric_max = self._get_numeric_range_oracle(cursor, table_name, col_name, data_type)
+            
             columns.append(ColumnInfo(
                 name=col_name,
                 data_type=data_type,
                 nullable=nullable,
                 max_length=max_length,
-                comment=""  # 暫時沒有評論信息
+                comment="",
+                sample_values=sample_values,
+                numeric_min=numeric_min,
+                numeric_max=numeric_max
             ))
         
         cursor.close()
-        logger.info(f"✅ 發現表格 {table_name} 的 {len(columns)} 個欄位")
+        logger.info(f"[OK] 發現表格 {table_name} 的 {len(columns)} 個欄位")
         return columns
+    
+    def _get_sample_values_oracle(self, cursor, table_name: str, column_name: str) -> Optional[List[str]]:
+        """從 Oracle 表中採集欄位樣本值"""
+        try:
+            query = f"SELECT DISTINCT {column_name} FROM {table_name} WHERE {column_name} IS NOT NULL AND ROWNUM <= 3"
+            cursor.execute(query)
+            values = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
+            return values if values else None
+        except Exception:
+            return None
+    
+    def _get_numeric_range_oracle(self, cursor, table_name: str, column_name: str, data_type: str) -> Tuple[Optional[float], Optional[float]]:
+        """從 Oracle 表中採集數值欄位的範圍"""
+        if 'NUMBER' not in data_type.upper() and 'INT' not in data_type.upper():
+            return None, None
+        try:
+            query = f"SELECT MIN({column_name}), MAX({column_name}) FROM {table_name}"
+            cursor.execute(query)
+            row = cursor.fetchone()
+            if row:
+                min_val = float(row[0]) if row[0] is not None else None
+                max_val = float(row[1]) if row[1] is not None else None
+                return min_val, max_val
+        except Exception:
+            pass
+        return None, None
     
     def _discover_columns_postgresql(self, table_name: str) -> List[ColumnInfo]:
         """PostgreSQL 欄位發現"""
@@ -399,15 +435,18 @@ class SchemaDiscoveryService:
                 },
                 'columns': [
                     {
-                        'name': col.name,
+                        'name': col.column_name,
                         'data_type': col.data_type,
                         'nullable': col.nullable,
                         'max_length': col.max_length,
-                        'comment': col.comment
+                        'comment': col.comment,
+                        'sample_values': col.sample_values if hasattr(col, 'sample_values') else None,
+                        'numeric_min': col.numeric_min if hasattr(col, 'numeric_min') else None,
+                        'numeric_max': col.numeric_max if hasattr(col, 'numeric_max') else None,
                     }
                     for col in columns
                 ]
             }
         
-        logger.info(f"✅ 完整 Schema 發現完成: {len(tables)} 個表格")
+        logger.info(f"[COMPLETE] 完整 Schema 發現完成: {len(tables)} 個表格")
         return schema

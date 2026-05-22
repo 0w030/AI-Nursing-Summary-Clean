@@ -346,7 +346,7 @@ def show_connection_manager():
                                 st.session_state.show_delete_confirm = False
                     
                     with col_confirm2:
-                        if st.button("❌ 取消刪除", key="cancel_delete_btn", use_container_width=True):
+                        if st.button("[CANCEL] 取消刪除", key="cancel_delete_btn", use_container_width=True):
                             st.session_state.show_delete_confirm = False
                             st.rerun()
     
@@ -532,7 +532,7 @@ def show_connection_manager():
                             'port': selected_conn.port,
                             'database': selected_conn.database,
                             'username': selected_conn.username,
-                            'password': selected_conn.password  # ✅ 添加密碼
+                            'password': selected_conn.password  # [OK] 添加密碼
                         }
                         
                         try:
@@ -559,7 +559,7 @@ def show_connection_manager():
                                     )
                                 
                                 st.success(f"""
-                                ✅ **Schema 同步完成！**
+                                [SUCCESS] **Schema 同步完成！**
                                 
                                 - 已導入表格: **{imported_tables}** 個
                                 - 已導入欄位: **{imported_fields}** 個
@@ -574,7 +574,7 @@ def show_connection_manager():
                                 
                                 # 分頁顯示
                                 page_size = 10
-                                total_pages = max(1, (len(table_names) + page_size - 1) // page_size)  # ✅ 確保至少為 1
+                                total_pages = max(1, (len(table_names) + page_size - 1) // page_size)  # [OK] 確保至少為 1
                                 page_num = st.number_input(
                                     "頁碼",
                                     value=1,
@@ -590,11 +590,246 @@ def show_connection_manager():
                                     col_count = len(table_data['columns'])
                                     row_count = table_data['table_info']['row_count']
                                     
-                                    st.caption(f"📊 **{table_name}** - {col_count} 欄位, {row_count} 行")
+                                    st.caption(f"[SCHEMA] **{table_name}** - {col_count} 欄位, {row_count} 行")
                         
                         except Exception as e:
-                            st.error(f"❌ Schema 同步失敗: {str(e)}")
+                            st.error(f"[ERROR] Schema 同步失敗: {str(e)}")
                             logger.error(f"Schema 同步錯誤: {str(e)}")
+
+
+# ===================== 編寫自己的電子辭典 =====================
+
+def show_dictionary_editor():
+    """Human-in-the-loop 電子辭典編輯 - AI推薦加手動確認"""
+    require_permission(Permission.EDIT_MAPPINGS)
+    
+    # 獲取活動連接
+    active_conn = config_manager.get_active_connection()
+    if not active_conn:
+        st.warning("請先選擇資料庫連接")
+        return
+    
+    st.title(f"編寫自己的電子辭典 - 當前連接: {active_conn.name}")
+    
+    # 初始化 session state
+    if "dictionary_mode" not in st.session_state:
+        st.session_state.dictionary_mode = "ai_detection"
+    if "ai_suggestions" not in st.session_state:
+        st.session_state.ai_suggestions = None
+    if "ai_error" not in st.session_state:
+        st.session_state.ai_error = None
+    
+    # 頁面模式切換按鈕
+    col_import, col_mode = st.columns([2, 1])
+    with col_import:
+        if st.button("導入現有說明檔 (JSON/CSV)", key="toggle_import_mode"):
+            st.session_state.dictionary_mode = "import" if st.session_state.dictionary_mode == "ai_detection" else "ai_detection"
+            st.rerun()
+    
+    with col_mode:
+        mode_label = "導入模式中" if st.session_state.dictionary_mode == "import" else "AI探測模式"
+        st.info(f"當前: {mode_label}")
+    
+    st.markdown("---")
+    
+    # --- 模式1：AI 自動探測 ---
+    if st.session_state.dictionary_mode == "ai_detection":
+        st.subheader("AI 自動探測與推論")
+        st.markdown("系統將自動連接資料庫，探測 Schema 並使用 AI 推薦中文翻譯。")
+        
+        if st.button("開始探測 Schema", key="detect_schema_btn", use_container_width=True):
+            with st.spinner("探測中..."):
+                try:
+                    conn_params = {
+                        'db_type': active_conn.db_type,
+                        'host': active_conn.host,
+                        'port': active_conn.port,
+                        'database': active_conn.database,
+                        'username': active_conn.username,
+                        'password': active_conn.password
+                    }
+                    discovery_service = SchemaDiscoveryService(conn_params)
+                    if not discovery_service.connect():
+                        st.session_state.ai_error = "無法連接到資料庫，請檢查連接配置"
+                    else:
+                        discovered_schema = discovery_service.discover_full_schema()
+                        discovery_service.disconnect()
+                        
+                        # 整理數據格式
+                        tables_dict = {}
+                        for table_name, table_data in discovered_schema.get('tables', {}).items():
+                            columns = []
+                            for col in table_data.get('columns', []):
+                                col_dict = {
+                                    'name': col.get('name', ''),
+                                    'data_type': col.get('data_type', ''),
+                                    'comment': col.get('comment', ''),
+                                    'sample_values': col.get('sample_values'),
+                                    'numeric_min': col.get('numeric_min'),
+                                    'numeric_max': col.get('numeric_max'),
+                                }
+                                columns.append(col_dict)
+                            
+                            tables_dict[table_name] = {
+                                'table_info': {
+                                    'row_count': table_data.get('table_info', {}).get('row_count', 0),
+                                    'comment': table_data.get('table_info', {}).get('comment', '')
+                                },
+                                'columns': columns
+                            }
+                        
+                        st.session_state.ai_suggestions = {'tables': tables_dict}
+                        st.session_state.ai_error = None
+                        st.rerun()
+                except Exception as e:
+                    st.session_state.ai_error = str(e)
+                    logger.error(f"Schema 探測失敗: {e}")
+        
+        if st.session_state.ai_error:
+            st.error(f"探測失敗: {st.session_state.ai_error}")
+        
+        if st.session_state.ai_suggestions:
+            schema = st.session_state.ai_suggestions
+            tables = schema.get('tables', {})
+            st.success(f"已成功探測 {len(tables)} 個資料表")
+            st.markdown("---")
+            
+            # 階層式展示：以表為單位
+            for table_name, table_data in tables.items():
+                table_info = table_data.get('table_info', {})
+                columns = table_data.get('columns', [])
+                
+                # 表名翻譯和狀態展示
+                with st.expander(f"[TABLE] {table_name} ({len(columns)} 欄位)", expanded=False):
+                    st.markdown(f"**原始表名:** `{table_name}`")
+                    st.markdown(f"**行數:** {table_info.get('row_count', '未知')}")
+                    
+                    # 為每個表建立表名翻譯輸入框
+                    table_trans_key = f"table_trans_{table_name}"
+                    table_translated = st.text_input(
+                        "翻譯後的表名（繁體中文）",
+                        value="",
+                        key=table_trans_key,
+                        help="例如：病患生理資訊表、護理紀錄表"
+                    )
+                    
+                    st.markdown("**欄位對照表**")
+                    
+                    for col in columns:
+                        col_name = col.get('name', '')
+                        col_type = col.get('data_type', '')
+                        col_comment = col.get('comment', '')
+                        sample_values = col.get('sample_values', [])
+                        numeric_min = col.get('numeric_min')
+                        numeric_max = col.get('numeric_max')
+                        
+                        # 構造推論證據
+                        evidence = []
+                        if sample_values:
+                            evidence.append(f"樣本值: {', '.join(str(v) for v in sample_values)}")
+                        if numeric_min is not None or numeric_max is not None:
+                            range_str = f"{numeric_min}" if numeric_min is not None else "?"
+                            range_str += f"~{numeric_max}" if numeric_max is not None else "~?"
+                            evidence.append(f"範圍: {range_str}")
+                        if col_comment:
+                            evidence.append(f"註解: {col_comment}")
+                        
+                        evidence_text = " | ".join(evidence) if evidence else "無特徵"
+                        
+                        col1, col2 = st.columns([1, 2])
+                        with col1:
+                            st.caption(f"**{col_name}**")
+                            st.caption(f"型別: {col_type}")
+                        with col2:
+                            col_trans_key = f"col_trans_{table_name}_{col_name}"
+                            col_translated = st.text_input(
+                                f"翻譯: {col_name}",
+                                value="",
+                                key=col_trans_key,
+                                placeholder="輸入繁體中文翻譯",
+                                label_visibility="collapsed"
+                            )
+                        
+                        # 狀態標籤與推論理由
+                        if col_translated:
+                            st.markdown("**[CONFIRMED] 人工確認**")
+                        else:
+                            st.markdown("**[AI] 建議中**")
+                        st.caption(f"證據: {evidence_text}")
+                        st.divider()
+                    
+                    # 該表的保存按鈕
+                    if st.button(f"保存 {table_name}", key=f"save_table_{table_name}"):
+                        table_translated = st.session_state.get(table_trans_key, "")
+                        
+                        saved_count = 0
+                        for col in columns:
+                            col_name = col.get('name', '')
+                            col_type = col.get('data_type', '')
+                            col_trans_key_local = f"col_trans_{table_name}_{col_name}"
+                            col_translated = st.session_state.get(col_trans_key_local, "")
+                            
+                            if col_translated:  # 只保存有翻譯的欄位
+                                mapping = FieldMapping(
+                                    connection_name=active_conn.name,
+                                    table_name=table_name,
+                                    db_column_name=col_name,
+                                    system_column_type=col_translated,
+                                    original_type=col_type,
+                                    is_ai_suggested=False,
+                                    is_confirmed=True,
+                                    confirmed_by=st.session_state.user.username,
+                                    notes=f"表別: {table_translated}" if table_translated else ""
+                                )
+                                
+                                if config_manager.update_field_mapping(
+                                    active_conn.name,
+                                    table_name,
+                                    mapping,
+                                    st.session_state.user.username
+                                ):
+                                    saved_count += 1
+                        
+                        if saved_count > 0:
+                            st.success(f"已保存 {saved_count} 個欄位映射")
+                            st.rerun()
+                        else:
+                            st.warning("未保存任何欄位(請先填入翻譯內容)")
+    
+    # --- 模式2：導入現有說明檔 ---
+    elif st.session_state.dictionary_mode == "import":
+        st.subheader("導入現有說明檔")
+        st.markdown("上傳 JSON 或 CSV 檔案，匯入既有的資料表翻譯設定。")
+        
+        uploaded_file = st.file_uploader(
+            "選擇檔案",
+            type=["json", "csv"],
+            key="dict_file_uploader"
+        )
+        
+        if uploaded_file is not None:
+            try:
+                if uploaded_file.type == "application/json":
+                    file_content = json.load(uploaded_file)
+                    st.success("JSON 檔案已成功載入")
+                    
+                    # 顯示預覽
+                    st.json(file_content)
+                    
+                    if st.button("匯入此配置", key="import_json_btn"):
+                        st.info("匯入功能開發中...")
+                
+                elif uploaded_file.type == "text/csv":
+                    df = pd.read_csv(uploaded_file)
+                    st.success("CSV 檔案已成功載入")
+                    
+                    st.dataframe(df, use_container_width=True)
+                    
+                    if st.button("匯入此配置", key="import_csv_btn"):
+                        st.info("匯入功能開發中...")
+            
+            except Exception as e:
+                st.error(f"檔案讀取失敗: {str(e)}")
 
 
 # ===================== Schema 映射編輯頁面 =====================
@@ -868,6 +1103,7 @@ def main():
             pages = {
                 "儀表板": show_dashboard,
                 "連接管理": show_connection_manager,
+                "編寫自己的電子辭典": show_dictionary_editor,
                 "電子辭典": show_schema_mapper,
                 "操作日誌": show_operation_logs,
                 "系統設置": show_system_settings,

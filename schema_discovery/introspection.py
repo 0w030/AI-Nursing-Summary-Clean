@@ -34,6 +34,9 @@ class ColumnMetadata:
     is_primary_key: bool = False
     is_unique: bool = False
     is_indexed: bool = False
+    sample_values: Optional[List[str]] = None
+    numeric_min: Optional[float] = None
+    numeric_max: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """轉換為字典"""
@@ -212,16 +215,25 @@ class OracleIntrospector(DatabaseIntrospector):
             
             for row in cursor.fetchall():
                 col_name = row[0]
+                data_type = row[1]
+                
+                # 收集樣本值和數值範圍
+                sample_values = self._get_sample_values_oracle(cursor, table_name, schema, col_name)
+                numeric_min, numeric_max = self._get_numeric_range_oracle(cursor, table_name, schema, col_name, data_type)
+                
                 columns.append(ColumnMetadata(
                     column_name=col_name,
-                    data_type=row[1],
+                    data_type=data_type,
                     nullable=bool(row[2]),
                     comment=row[3],
                     max_length=row[4],
                     numeric_precision=row[5],
                     numeric_scale=row[6],
                     is_primary_key=col_name in pk_columns,
-                    is_unique=col_name in unique_columns
+                    is_unique=col_name in unique_columns,
+                    sample_values=sample_values,
+                    numeric_min=numeric_min,
+                    numeric_max=numeric_max
                 ))
         except Exception as e:
             logger.error(f"取得欄位資訊失敗: {e}")
@@ -269,6 +281,32 @@ class OracleIntrospector(DatabaseIntrospector):
             return {row[0] for row in cursor.fetchall()}
         except Exception:
             return set()
+
+    def _get_sample_values_oracle(self, cursor, table_name: str, schema: str, column_name: str) -> Optional[List[str]]:
+        """從表中取得欄位的樣本值（最多3筆）"""
+        try:
+            query = f"SELECT DISTINCT {column_name} FROM {schema}.{table_name} WHERE {column_name} IS NOT NULL AND ROWNUM <= 3"
+            cursor.execute(query)
+            values = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
+            return values if values else None
+        except Exception:
+            return None
+
+    def _get_numeric_range_oracle(self, cursor, table_name: str, schema: str, column_name: str, data_type: str) -> Tuple[Optional[float], Optional[float]]:
+        """從表中取得數值欄位的最小值和最大值"""
+        if 'NUMBER' not in data_type.upper() and 'INT' not in data_type.upper() and 'DECIMAL' not in data_type.upper():
+            return None, None
+        try:
+            query = f"SELECT MIN({column_name}), MAX({column_name}) FROM {schema}.{table_name}"
+            cursor.execute(query)
+            row = cursor.fetchone()
+            if row:
+                min_val = float(row[0]) if row[0] is not None else None
+                max_val = float(row[1]) if row[1] is not None else None
+                return min_val, max_val
+        except Exception:
+            pass
+        return None, None
 
     def get_all_tables_metadata(self, schema: str = None) -> List[TableMetadata]:
         """取得所有資料表的中繼資料"""
@@ -386,16 +424,25 @@ class PostgreSQLIntrospector(DatabaseIntrospector):
             
             for row in cursor.fetchall():
                 col_name = row[0]
+                data_type = row[1]
+                
+                # 收集樣本值和數值範圍
+                sample_values = self._get_sample_values_postgresql(cursor, table_name, schema, col_name)
+                numeric_min, numeric_max = self._get_numeric_range_postgresql(cursor, table_name, schema, col_name, data_type)
+                
                 columns.append(ColumnMetadata(
                     column_name=col_name,
-                    data_type=row[1],
+                    data_type=data_type,
                     nullable=not row[2],
                     comment=row[3],
                     max_length=row[4],
                     numeric_precision=row[5],
                     numeric_scale=row[6],
                     default_value=row[7],
-                    is_primary_key=col_name in pk_columns
+                    is_primary_key=col_name in pk_columns,
+                    sample_values=sample_values,
+                    numeric_min=numeric_min,
+                    numeric_max=numeric_max
                 ))
         except Exception as e:
             logger.error(f"取得欄位資訊失敗: {e}")
@@ -418,6 +465,33 @@ class PostgreSQLIntrospector(DatabaseIntrospector):
             return {row[0] for row in cursor.fetchall()}
         except Exception:
             return set()
+
+    def _get_sample_values_postgresql(self, cursor, table_name: str, schema: str, column_name: str) -> Optional[List[str]]:
+        """從表中取得欄位的樣本值（最多3筆）"""
+        try:
+            query = f'SELECT DISTINCT "{column_name}" FROM {schema}."{table_name}" WHERE "{column_name}" IS NOT NULL LIMIT 3'
+            cursor.execute(query)
+            values = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
+            return values if values else None
+        except Exception:
+            return None
+
+    def _get_numeric_range_postgresql(self, cursor, table_name: str, schema: str, column_name: str, data_type: str) -> Tuple[Optional[float], Optional[float]]:
+        """從表中取得數值欄位的最小值和最大值"""
+        numeric_types = ['integer', 'bigint', 'smallint', 'decimal', 'numeric', 'float', 'real', 'double precision']
+        if data_type.lower() not in numeric_types:
+            return None, None
+        try:
+            query = f'SELECT MIN("{column_name}"), MAX("{column_name}") FROM {schema}."{table_name}"'
+            cursor.execute(query)
+            row = cursor.fetchone()
+            if row:
+                min_val = float(row[0]) if row[0] is not None else None
+                max_val = float(row[1]) if row[1] is not None else None
+                return min_val, max_val
+        except Exception:
+            pass
+        return None, None
 
     def get_all_tables_metadata(self, schema: str = None) -> List[TableMetadata]:
         """取得所有資料表的中繼資料"""
@@ -496,17 +570,53 @@ class SQLiteIntrospector(DatabaseIntrospector):
             for row in cursor.fetchall():
                 # PRAGMA table_info 返回: cid, name, type, notnull, dflt_value, pk
                 col_name = row[1]
+                data_type = row[2]
+                
+                # 收集樣本值和數值範圍
+                sample_values = self._get_sample_values_sqlite(cursor, table_name, col_name)
+                numeric_min, numeric_max = self._get_numeric_range_sqlite(cursor, table_name, col_name, data_type)
+                
                 columns.append(ColumnMetadata(
                     column_name=col_name,
-                    data_type=row[2],
+                    data_type=data_type,
                     nullable=not bool(row[3]),
                     default_value=row[4],
-                    is_primary_key=col_name in pk_columns
+                    is_primary_key=col_name in pk_columns,
+                    sample_values=sample_values,
+                    numeric_min=numeric_min,
+                    numeric_max=numeric_max
                 ))
         except Exception as e:
             logger.error(f"取得欄位資訊失敗: {e}")
         
         return columns
+
+    def _get_sample_values_sqlite(self, cursor, table_name: str, column_name: str) -> Optional[List[str]]:
+        """從表中取得欄位的樣本值（最多3筆）"""
+        try:
+            query = f'SELECT DISTINCT "{column_name}" FROM "{table_name}" WHERE "{column_name}" IS NOT NULL LIMIT 3'
+            cursor.execute(query)
+            values = [str(row[0]) for row in cursor.fetchall() if row[0] is not None]
+            return values if values else None
+        except Exception:
+            return None
+
+    def _get_numeric_range_sqlite(self, cursor, table_name: str, column_name: str, data_type: str) -> Tuple[Optional[float], Optional[float]]:
+        """從表中取得數值欄位的最小值和最大值"""
+        numeric_types = ['INTEGER', 'REAL', 'NUMERIC', 'FLOAT', 'DOUBLE']
+        if data_type.upper() not in numeric_types:
+            return None, None
+        try:
+            query = f'SELECT MIN("{column_name}"), MAX("{column_name}") FROM "{table_name}"'
+            cursor.execute(query)
+            row = cursor.fetchone()
+            if row:
+                min_val = float(row[0]) if row[0] is not None else None
+                max_val = float(row[1]) if row[1] is not None else None
+                return min_val, max_val
+        except Exception:
+            pass
+        return None, None
 
     def get_all_tables_metadata(self, schema: str = None) -> List[TableMetadata]:
         """取得所有資料表的中繼資料"""

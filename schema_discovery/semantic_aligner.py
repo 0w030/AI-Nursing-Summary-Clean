@@ -5,6 +5,7 @@ LLM 語意對齐模組 (LLM Semantic Alignment Module)
 
 import json
 import logging
+import os
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
@@ -131,29 +132,54 @@ class OpenAISemanticAligner(LLMSemanticAligner):
             raise ImportError("請安裝 openai 套件: pip install openai")
     
     def _create_system_prompt(self, core_entities_context: str) -> str:
-        """建立系統提示詞"""
+        """建立系統提示詞 - 數據特徵優先分析"""
         return f"""你是一個資料庫架構分析專家。
-你的任務是根據資料庫欄位名稱、資料型別、註解，
+你的任務是根據資料庫欄位名稱、資料型別、註解、以及 **數據特徵**（樣本值、數值範圍），
 將其對應到預定義的醫療系統標準實體及欄位。
 
 核心實體定義：
 {core_entities_context}
 
-重要規則：
-1. 分析欄位名稱中的含義（中文/英文）
-2. 參考資料型別是否與建議的標準欄位相符
-3. 利用欄位註解進一步確認意義
-4. 如果不確定，給出信心度較低的建議
+**三層分析規則（按優先級）：**
 
-你必須以 JSON 格式回答，格式如下：
+**規則1：數據特徵優先分析**
+- 檢查樣本值：M/F → 性別, A/B/O/AB → 血型
+- 檢查數值範圍：
+  * 35~40°C → 體溫 (body_temperature)
+  * 80~120 mmHg → 收縮壓 (systolic_bp)
+  * 40~80 mmHg → 舒張壓 (diastolic_bp)
+  * 60~100 bpm → 心率 (heart_rate)
+  * 90~100 → 血氧飽和度 (SpO2)
+  * 12~20 次/分 → 呼吸速率 (respiratory_rate)
+
+**規則2：上下文關聯分析**
+- 如果表格包含：體溫+收縮壓+舒張壓 → 對應「病患生理監測表」
+- 如果表格包含：血紅蛋白+白血球 → 對應「檢驗結果表」
+- 如果表格包含：診斷代碼+診斷名稱 → 對應「診斷記錄表」
+
+**規則3：名稱與註解匹配**
+- 分析欄位名稱中的含義（中文/英文）
+- 參考資料型別是否與建議的標準欄位相符
+- 利用欄位註解進一步確認意義
+
+**重要說明：**
+- 始終優先使用 **數據特徵**（樣本值和範圍）來推斷欄位含義
+- 如果數據特徵明確指向某個標準欄位，應該高度確信（confidence ≥ 0.85）
+- 如果無法確定，給出信心度較低的建議
+
+**你必須以嚴格的 JSON 格式回答：**
 {{
-    "suggested_entity_field": "標準欄位名",
-    "suggested_entity": "實體類型",
-    "confidence": 0.85,
-    "reasoning": "對應理由說明",
-    "alternative_suggestions": [
-        {{"field": "備選欄位1", "confidence": 0.6}},
-        {{"field": "備選欄位2", "confidence": 0.4}}
+    "db_table_name": "原始表格名稱",
+    "mapped_table_name": "對應的中文表格名稱",
+    "table_reasoning": "表格層級的對應理由（基於包含的欄位類型）",
+    "columns": [
+        {{
+            "db_column_name": "原始欄位名",
+            "mapped_column_name": "標準欄位名",
+            "confidence": 0.95,
+            "reasoning": "具體推理證據（包括數據特徵分析）"
+        }},
+        ...
     ]
 }}"""
     
@@ -163,9 +189,12 @@ class OpenAISemanticAligner(LLMSemanticAligner):
         data_type: str,
         comment: str,
         table_name: str = None,
-        table_comment: str = None
+        table_comment: str = None,
+        sample_values: Optional[List[str]] = None,
+        numeric_min: Optional[float] = None,
+        numeric_max: Optional[float] = None
     ) -> str:
-        """建立欄位映射的使用者提示詞"""
+        """建立欄位映射的使用者提示詞 - 包含數據特徵"""
         prompt = f"""請對以下資料庫欄位進行語意對齁：
 
 欄位名稱: {column_name}
@@ -177,7 +206,15 @@ class OpenAISemanticAligner(LLMSemanticAligner):
         if table_comment:
             prompt += f"表格說明: {table_comment}\n"
         
-        prompt += "\n請分析並回傳 JSON 格式的對應建議。"
+        # 添加數據特徵信息
+        if sample_values:
+            prompt += f"樣本值: {', '.join(sample_values)}\n"
+        if numeric_min is not None or numeric_max is not None:
+            min_str = str(numeric_min) if numeric_min is not None else "?"
+            max_str = str(numeric_max) if numeric_max is not None else "?"
+            prompt += f"數值範圍: {min_str} ~ {max_str}\n"
+        
+        prompt += "\n請根據數據特徵優先進行分析，並回傳 JSON 格式的對應建議。"
         return prompt
     
     def align_column(
@@ -187,16 +224,20 @@ class OpenAISemanticAligner(LLMSemanticAligner):
         comment: str,
         table_name: str = None,
         table_comment: str = None,
-        core_entities_context: str = None
+        core_entities_context: str = None,
+        sample_values: Optional[List[str]] = None,
+        numeric_min: Optional[float] = None,
+        numeric_max: Optional[float] = None
     ) -> MappingSuggestion:
-        """使用 OpenAI 對齁單個欄位"""
+        """使用 OpenAI 對齁單個欄位 - 包含數據特徵"""
         try:
             if not core_entities_context:
                 core_entities_context = self._get_default_entities_context()
             
             system_prompt = self._create_system_prompt(core_entities_context)
             user_prompt = self._create_column_prompt(
-                column_name, data_type, comment, table_name, table_comment
+                column_name, data_type, comment, table_name, table_comment,
+                sample_values, numeric_min, numeric_max
             )
             
             response = self.openai.ChatCompletion.create(
@@ -212,19 +253,37 @@ class OpenAISemanticAligner(LLMSemanticAligner):
             result_text = response.choices[0].message.content
             result_json = json.loads(result_text)
             
-            return MappingSuggestion(
-                source_column=column_name,
-                source_data_type=data_type,
-                source_comment=comment or "",
-                suggested_entity_field=result_json.get("suggested_entity_field"),
-                suggested_entity=result_json.get("suggested_entity"),
-                confidence=float(result_json.get("confidence", 0)),
-                reasoning=result_json.get("reasoning", ""),
-                alternative_suggestions=[
-                    (alt["field"], alt["confidence"]) 
-                    for alt in result_json.get("alternative_suggestions", [])
-                ]
-            )
+            # 支持新的結構化格式：從 columns 陣列中提取第一個欄位的映射
+            if "columns" in result_json and result_json["columns"]:
+                col_mapping = result_json["columns"][0]
+                return MappingSuggestion(
+                    source_column=column_name,
+                    source_data_type=data_type,
+                    source_comment=comment or "",
+                    suggested_entity_field=col_mapping.get("mapped_column_name"),
+                    suggested_entity=result_json.get("mapped_table_name", "Unknown"),
+                    confidence=float(col_mapping.get("confidence", 0)),
+                    reasoning=col_mapping.get("reasoning", ""),
+                    alternative_suggestions=[
+                        (alt["field"], alt["confidence"]) 
+                        for alt in result_json.get("alternative_suggestions", [])
+                    ]
+                )
+            else:
+                # 向後兼容舊格式
+                return MappingSuggestion(
+                    source_column=column_name,
+                    source_data_type=data_type,
+                    source_comment=comment or "",
+                    suggested_entity_field=result_json.get("suggested_entity_field"),
+                    suggested_entity=result_json.get("suggested_entity"),
+                    confidence=float(result_json.get("confidence", 0)),
+                    reasoning=result_json.get("reasoning", ""),
+                    alternative_suggestions=[
+                        (alt["field"], alt["confidence"]) 
+                        for alt in result_json.get("alternative_suggestions", [])
+                    ]
+                )
         except Exception as e:
             logger.error(f"OpenAI 對齁失敗 [{column_name}]: {e}")
             return MappingSuggestion(
@@ -244,18 +303,32 @@ class OpenAISemanticAligner(LLMSemanticAligner):
         column_descriptions: List[Dict[str, str]],
         core_entities_context: str = None
     ) -> Tuple[str, float, str]:
-        """使用 OpenAI 對齁資料表"""
+        """使用 OpenAI 對齁資料表 - 數據特徵優先"""
         try:
             if not core_entities_context:
                 core_entities_context = self._get_default_entities_context()
             
-            # 構建欄位描述
-            columns_text = "\n".join([
-                f"- {col.get('name', 'unknown')}: {col.get('type', 'unknown')} ({col.get('comment', 'no comment')})"
-                for col in column_descriptions
-            ])
+            # 構建欄位描述（包含數據特徵）
+            columns_text_parts = []
+            for col in column_descriptions:
+                col_line = f"- {col.get('name', 'unknown')}: {col.get('type', 'unknown')}"
+                if col.get('comment'):
+                    col_line += f" ({col.get('comment')})"
+                
+                # 添加數據特徵
+                if col.get('sample_values'):
+                    col_line += f" [樣本: {', '.join(col.get('sample_values'))}]"
+                if col.get('numeric_min') is not None or col.get('numeric_max') is not None:
+                    min_val = col.get('numeric_min', '?')
+                    max_val = col.get('numeric_max', '?')
+                    col_line += f" [範圍: {min_val}~{max_val}]"
+                
+                columns_text_parts.append(col_line)
             
-            prompt = f"""請分析以下資料表並對應到醫療系統的標準實體：
+            columns_text = "\n".join(columns_text_parts)
+            
+            prompt = f"""請分析以下資料表並對應到醫療系統的標準實體。
+**重點：優先分析數據特徵（樣本值和數值範圍）**：
 
 表格名稱: {table_name}
 表格說明: {table_comment if table_comment else "無"}
@@ -263,31 +336,47 @@ class OpenAISemanticAligner(LLMSemanticAligner):
 欄位列表:
 {columns_text}
 
-請判斷這個表格最可能對應哪個核心實體（Patient, Visit, NursingRecord, LabResult, VitalSign等），
-並回傳 JSON：
+請判斷這個表格最可能對應哪個核心實體，並分析表格中所有欄位的對應情況。
+回傳嚴格的 JSON 格式：
 {{
-    "suggested_entity": "實體名稱",
-    "confidence": 0.9,
-    "reasoning": "對應理由"
+    "db_table_name": "{table_name}",
+    "mapped_table_name": "對應的標準表格名稱",
+    "table_reasoning": "表格層級的對應理由（基於整體欄位類型和數據特徵）",
+    "columns": [
+        {{
+            "db_column_name": "原始欄位名",
+            "mapped_column_name": "標準欄位名",
+            "confidence": 0.9,
+            "reasoning": "對應理由（包括數據特徵分析）"
+        }},
+        ...
+    ]
 }}"""
             
             response = self.openai.ChatCompletion.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": f"你是資料庫架構專家。核心實體:\n{core_entities_context}"},
+                    {"role": "system", "content": self._create_system_prompt(core_entities_context)},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
-                max_tokens=300
+                max_tokens=1000
             )
             
             result_text = response.choices[0].message.content
             result_json = json.loads(result_text)
             
+            # 計算表格級別的信心度（基於所有欄位的平均）
+            columns = result_json.get("columns", [])
+            if columns:
+                avg_confidence = sum(col.get("confidence", 0) for col in columns) / len(columns)
+            else:
+                avg_confidence = float(result_json.get("confidence", 0))
+            
             return (
-                result_json.get("suggested_entity"),
-                float(result_json.get("confidence", 0)),
-                result_json.get("reasoning", "")
+                result_json.get("mapped_table_name"),
+                avg_confidence,
+                result_json.get("table_reasoning", "")
             )
         except Exception as e:
             logger.error(f"表格對齁失敗 [{table_name}]: {e}")
@@ -300,7 +389,7 @@ class OpenAISemanticAligner(LLMSemanticAligner):
         table_comment: str = None,
         core_entities_context: str = None
     ) -> List[MappingSuggestion]:
-        """批量對齁欄位"""
+        """批量對齁欄位 - 包含數據特徵"""
         results = []
         for col in columns:
             suggestion = self.align_column(
@@ -309,7 +398,10 @@ class OpenAISemanticAligner(LLMSemanticAligner):
                 comment=col.get("comment", ""),
                 table_name=table_name,
                 table_comment=table_comment,
-                core_entities_context=core_entities_context
+                core_entities_context=core_entities_context,
+                sample_values=col.get("sample_values"),
+                numeric_min=col.get("numeric_min"),
+                numeric_max=col.get("numeric_max")
             )
             results.append(suggestion)
         return results
@@ -563,8 +655,9 @@ def create_semantic_aligner(use_openai: bool = False, api_key: str = None) -> LL
         LLMSemanticAligner 實例
     """
     if use_openai:
+        api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise ValueError("使用 OpenAI 時必須提供 API 金鑰")
+            raise ValueError("使用 OpenAI 時必須提供 API 金鑰，請在 .env 中設定 OPENAI_API_KEY")
         return OpenAISemanticAligner(api_key)
     else:
         return LocalRulesSemanticAligner()

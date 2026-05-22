@@ -95,8 +95,8 @@ class CoreEntityCatalog:
             entity_type=EntityType.PATIENT,
             display_name="患者",
             description="患者基本資訊",
-            table_patterns=[r"PATIENT", r"PATIENT_\w+", r"PH_.*", r"PERSON"],
-            table_keywords=["patient", "patient_info", "patients", "人口", "個案", "個人"],
+            table_patterns=[r"PATIENT", r"PATIENT_\w+", r"PATIENT_PROPS", r"PH_.*", r"PERSON"],
+            table_keywords=["patient", "patient_info", "patients", "patient_props", "properties", "props", "人口", "個案", "個人"],
             fields=[
                 EntityField(
                     field_name="patient_id",

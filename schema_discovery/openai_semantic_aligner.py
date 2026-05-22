@@ -115,6 +115,7 @@ class OpenAISemanticAligner(LLMSemanticAligner):
 - LAB_, RESULT_, TEST_ 開頭 → LabResult 實體
 - VITAL_, VS_, SIGN_ 開頭 → VitalSign 實體
 - NUR_, NURSING_, NOTE_ 開頭 → NursingRecord 實體
+- 如果表格名稱包含 PROPS、PROPERTIES、PROFILE，請將其理解為屬性或評估類型，例如 PATIENT_PROPS -> 病人評估
 
 ## 輸出格式
 

@@ -7,10 +7,19 @@ import logging
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
-import oracledb
-import psycopg2
+try:
+    import oracledb
+except ImportError:
+    oracledb = None
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
 import sqlite3
-import pyodbc
+try:
+    import pyodbc
+except ImportError:
+    pyodbc = None
 
 logger = logging.getLogger(__name__)
 
@@ -435,7 +444,7 @@ class SchemaDiscoveryService:
                 },
                 'columns': [
                     {
-                        'name': col.column_name,
+                        'name': col.name,
                         'data_type': col.data_type,
                         'nullable': col.nullable,
                         'max_length': col.max_length,

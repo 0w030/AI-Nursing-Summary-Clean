@@ -575,7 +575,475 @@
         "mapping_count": 305
       },
       "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:16:41.744680",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:16:43.879798",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:25:10.510727",
+      "operation_type": "schema_import",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "tables": 305,
+        "fields": 4000,
+        "auto_type_map": true
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:26:23.944916",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:28:35.634284",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:28:36.699469",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:28:37.206792",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:28:37.618516",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:28:38.088071",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:38:53.584716",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T20:55:09.421033",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T21:13:25.790079",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-22T21:16:48.521427",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:02.592996",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "POID",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:08.316820",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "RECORD_POID",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:10.937944",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "RECORD_TIME",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:15.570441",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "STATUS",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:19.583749",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "MODIFIER",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:23.439905",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "MODIFYTIME",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:26.412577",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "DIAG_SERIAL",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:29.492248",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "TITLE",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:32.601545",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "STATION_ID",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:36.931428",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "CREATOR",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:39.462760",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "CREATETIME",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:42.507822",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "TYPE",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:34:49.104036",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_VERSION",
+        "column": "CHECKUSERNAME",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:04.299615",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_DETAIL",
+        "column": "POID",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:07.904341",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_DETAIL",
+        "column": "RECORD_POID",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:11.263364",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_DETAIL",
+        "column": "RECORD_TYPE",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:14.416499",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_DETAIL",
+        "column": "CONTENT",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:16.127143",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_DETAIL",
+        "column": "STATUS",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:19.614780",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_DETAIL",
+        "column": "MODIFIER",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:23.919297",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_DETAIL",
+        "column": "CREATOR",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:27.302380",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_DETAIL",
+        "column": "CREATETIME",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:29.531943",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD_DETAIL",
+        "column": "CREATETIME",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:43.170711",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD",
+        "column": "PATIENT_ID",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:46.335437",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD",
+        "column": "POID",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:50.413400",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD",
+        "column": "ENCOUNTER_ID",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:53.227297",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD",
+        "column": "ISTOKARDEX",
+        "mapping": "String"
+      },
+      "status": "success"
+    },
+    {
+      "timestamp": "2026-05-23T20:35:55.497342",
+      "operation_type": "mapping_update",
+      "username": "admin",
+      "details": {
+        "connection": "oracle_from_env",
+        "table": "RECORD",
+        "column": "SIGNSTATUS",
+        "mapping": "String"
+      },
+      "status": "success"
     }
   ],
-  "total": 53
+  "total": 93
 }

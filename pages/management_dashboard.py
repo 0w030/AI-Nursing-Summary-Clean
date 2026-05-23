@@ -554,6 +554,7 @@ def show_connection_manager():
                                     # 導入到配置管理器
                                     imported_tables, imported_fields = config_manager.import_discovered_schema(
                                         discovered_schema,
+                                        connection_name=selected_conn_name,
                                         username=st.session_state.user.username,
                                         auto_type_map=auto_type_map
                                     )

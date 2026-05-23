@@ -121,18 +121,18 @@ def format_time_value(raw_value):
 
 def create_test_patient_payload(row_dict: dict):
     patient_id = get_first_matching_field(row_dict, [
-        "PATIENT_ID", "PATID", "PID", "PATIENTID", "PERSON_ID"
+        "PATIENT_ID", "PATID", "PID", "PATIENTID", "PERSON_ID", "HHISNUM"
     ]) or "測試病患"
     encounter_id = get_first_matching_field(row_dict, [
-        "ENCOUNTER_ID", "ENCOUNTERID", "VISIT_ID", "VISITID", "ADMISSION_ID"
+        "ENCOUNTER_ID", "ENCOUNTERID", "VISIT_ID", "VISITID", "ADMISSION_ID", "HCASENO"
     ]) or "0000000000"
     name_value = get_first_matching_field(row_dict, [
-        "NAME", "PAT_NAME", "FULL_NAME", "PATIENT_NAME", "CUSTOMER_NAME"
+        "NAME", "PAT_NAME", "FULL_NAME", "PATIENT_NAME", "CUSTOMER_NAME", "HNAMEC"
     ]) or "測試病患"
 
     time_candidates = [
         "RECORD_TIME", "CREATE_TIME", "PROCDTTM", "ADMISSION_TIME", "DISCHARGE_TIME",
-        "TIMESTAMP", "DATE_TIME", "EVENT_TIME"
+        "TIMESTAMP", "DATE_TIME", "EVENT_TIME", "HINDTTM", "HDISDTTM", "VISITDT"
     ]
     time_values = []
     for candidate in time_candidates:
@@ -169,11 +169,40 @@ def create_test_patient_payload(row_dict: dict):
     }
 
 
-def load_test_patient_list_dynamic(table_name: str = "NISHBED"):
+def load_test_patient_list_dynamic(table_name: str = None):
     """從當前活動連線動態載入前 10 筆病患測試資料。"""
     active_connection = config_manager.get_active_connection()
     if not active_connection:
         return []
+
+    mappings = config_manager.get_connection_mappings(active_connection.name)
+    if not mappings:
+        st.error("請先至「管理中控台」進行 Schema 同步，目前沒有可用的資料表。")
+        return []
+
+    if not table_name:
+        if "NISHBED" in mappings:
+            table_name = "NISHBED"
+        elif "nishbed" in mappings:
+            table_name = "nishbed"
+        else:
+            best_table = None
+            backup_table = None
+            for t_name, fields in mappings.items():
+                col_names = [f.db_column_name.upper() for f in fields]
+                has_pid = any(c in col_names for c in ["PATIENT_ID", "PATID", "PID", "PATIENTID", "PERSON_ID", "HHISNUM"])
+                has_eid = any(c in col_names for c in ["ENCOUNTER_ID", "ENCOUNTERID", "VISIT_ID", "VISITID", "ADMISSION_ID", "HCASENO"])
+                has_name = any(c in col_names for c in ["NAME", "PAT_NAME", "FULL_NAME", "PATIENT_NAME", "CUSTOMER_NAME", "HNAMEC"])
+                
+                if has_pid and has_eid and has_name:
+                    best_table = t_name
+                    break
+                elif has_pid and has_eid and not backup_table:
+                    backup_table = t_name
+                elif has_pid and not backup_table:
+                    backup_table = t_name
+                    
+            table_name = best_table if best_table else (backup_table if backup_table else list(mappings.keys())[0])
 
     db_type = (active_connection.db_type or "").lower()
     host = active_connection.host

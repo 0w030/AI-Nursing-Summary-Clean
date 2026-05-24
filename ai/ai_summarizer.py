@@ -353,7 +353,7 @@ def generate_nursing_summary(
         try:
             similar_examples = rag_service.retrieve_similar_cases(patient_data)
             if similar_examples:
-                selected_system_prompt += f"\n\n{similar_examples}"
+                selected_system_prompt += f"\n\n{similar_examples}\n\n**【最重要指令】: 雖然提供了上述範例供你參考用語，但你的最終輸出格式【務必嚴格遵照】前面指定的格式要求（如 ISBAR、SOAP 或列點式），絕對不可以被範例的格式覆蓋！**"
                 print("🧠 [RAG] 成功提取歷史相似案例作為參考！")
         except Exception as e:
             print(f"⚠️ RAG 檢索失敗，將不使用歷史範例: {e}")

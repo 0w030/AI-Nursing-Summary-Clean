@@ -23,7 +23,7 @@ class RAGService:
             response = requests.post(self.embed_url, json={
                 "model": "nomic-embed-text",
                 "prompt": text
-            }, timeout=10)
+            }, timeout=60)
             if response.status_code == 200:
                 return response.json().get("embedding", [])
             else:
@@ -66,7 +66,7 @@ class RAGService:
             return ""
             
         # 組裝成範例字串
-        examples_text = "【以下是過去類似病歷的優良摘要範例，請參考其寫作風格與格式】\n"
+        examples_text = "【以下是過去類似病歷的優良摘要範例，請參考其專業用語與重點提取方式】\n"
         for i, doc in enumerate(results['documents'][0]):
             examples_text += f"範例 {i+1}:\n{doc}\n---\n"
             

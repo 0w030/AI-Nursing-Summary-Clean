@@ -22,7 +22,7 @@
       "password": "NIS_BB_AdamAI",
       "is_active": true,
       "created_at": "2026-04-20T21:04:07.855686",
-      "last_modified": "2026-05-22T21:16:48.519428"
+      "last_modified": "2026-05-24T16:15:10.517056"
     },
     "postgres": {
       "name": "postgres",
@@ -37,5 +37,5 @@
       "last_modified": "2026-04-26T13:31:58.277826"
     }
   },
-  "last_modified": "2026-05-22T21:16:48.519428"
+  "last_modified": "2026-05-24T16:15:10.517056"
 }

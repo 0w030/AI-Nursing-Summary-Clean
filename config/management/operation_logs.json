@@ -1043,7 +1043,18 @@
         "mapping": "String"
       },
       "status": "success"
+    },
+    {
+      "timestamp": "2026-05-24T16:15:10.518058",
+      "operation_type": "connection_switch",
+      "username": "admin",
+      "details": {
+        "from": null,
+        "to": "oracle_from_env",
+        "mapping_count": 305
+      },
+      "status": "success"
     }
   ],
-  "total": 93
+  "total": 94
 }

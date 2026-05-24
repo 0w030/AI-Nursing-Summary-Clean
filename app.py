@@ -181,7 +181,11 @@ def load_test_patient_list_dynamic(table_name: str = None):
         return []
 
     if not table_name:
-        if "NISHBED" in mappings:
+        if "RECORD" in mappings:
+            table_name = "RECORD"
+        elif "record" in mappings:
+            table_name = "record"
+        elif "NISHBED" in mappings:
             table_name = "NISHBED"
         elif "nishbed" in mappings:
             table_name = "nishbed"
@@ -545,6 +549,19 @@ def render_summary_config():
         t1 = c2.time_input("開始時間", default_datetime.time())
         combined_dt = datetime.combine(d1, t1)
         start_dt_str = combined_dt.strftime("%Y%m%d%H%M%S")
+        
+    # 模型選擇
+    st.subheader("AI 模型設定")
+    model_options = {
+        "auto": "自動 (優先使用本地模型，若失敗則使用雲端模型)",
+        "local": "本地模型 (Ollama - Mistral 等)",
+        "groq": "雲端模型 (Groq - LLaMA 3 等)"
+    }
+    selected_model_key = st.selectbox(
+        "選擇要用來生成摘要的 AI 模型來源",
+        options=list(model_options.keys()),
+        format_func=lambda x: model_options[x]
+    )
     
     # 生成按鈕
     if not selected_queries:
@@ -553,33 +570,52 @@ def render_summary_config():
     
     if st.button("開始生成摘要", type="primary", use_container_width=True):
         load_dotenv()
-        if not os.getenv("GROQ_API_KEY"):
-            st.error("未設定 API 金鑰")
+        if selected_model_key == "groq" and not os.getenv("GROQ_API_KEY"):
+            st.error("您選擇了雲端模型 (Groq)，但尚未在 .env 設定 GROQ_API_KEY")
             return
         
         with st.spinner("正在分析資料並生成摘要..."):
             active_conn = config_manager.get_active_connection()
             active_mappings = config_manager.get_connection_mappings(active_conn.name)
-            
+
             p_data = get_patient_full_history(
                 selected_patient['就醫序號'],
                 start_time=start_dt_str,
                 schema_queries=selected_queries,
                 connection_mappings=active_mappings
             )
-            
+
             summary = generate_nursing_summary(
                 selected_patient['就醫序號'],
                 p_data,
                 selected_template_name,
                 custom_system_prompt=st.session_state.preview_prompt,
-                focus_areas=selected_focus_areas
+                focus_areas=selected_focus_areas,
+                model_source=selected_model_key
             )
-            
+
             st.markdown("### 生成結果")
             st.markdown("---")
             st.markdown(summary)
 
+            # 將生成的結果與原始資料存入 session_state，供按鈕使用
+            st.session_state.last_generated_summary = summary
+            st.session_state.last_patient_data = p_data
+
+        # 在生成結果外顯示存入知識庫的選項
+        if st.session_state.get("last_generated_summary"):
+            st.markdown("---")
+            if rag_service:
+                if st.button("🌟 覺得這份摘要不錯？存入 AI 知識庫供未來參考", key="save_rag_btn", help="這會將此份臨床資料與生成的摘要存入向量資料庫，未來相似的病歷會參考此摘要的風格與重點。"):
+                    with st.spinner("正在將摘要向量化並存入知識庫..."):
+                        rag_service.add_memory(
+                            encounter_id=st.session_state.selected_patient['就醫序號'],
+                            raw_data=st.session_state.last_patient_data,
+                            final_summary=st.session_state.last_generated_summary
+                        )
+                    st.success("✅ 已成功存入知識庫！未來的相似案例將會參考此寫作風格。")
+            else:
+                st.info("💡 (提示: RAG 服務未啟動，因此無法使用知識庫記憶功能)")
 
 # =========================================================================
 # 模板導入相關輔助函數

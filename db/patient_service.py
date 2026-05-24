@@ -298,9 +298,39 @@ def get_patient_full_history(encounter_id, start_time=None, end_time=None, schem
                         time_column = fm.db_column_name
                         break
                 
+                # 取得該表的所有已知欄位 (大寫)
+                all_db_cols = [fm.db_column_name.upper() for fm in table_field_mappings]
+                
+                # 判斷此表是用哪個欄位代表就醫序號
+                encounter_col = None
+                for candidate in ["ENCOUNTER_ID", "ENCOUNTERID", "VISIT_ID", "VISITID", "ADMISSION_ID", "HCASENO"]:
+                    if candidate in all_db_cols:
+                        encounter_col = candidate
+                        break
+                
                 # 動態組裝 SQL 語法
-                sql = f"SELECT {cols_str} FROM {table_name} WHERE ENCOUNTER_ID = :encounter_id"
-                params = {"encounter_id": encounter_id}
+                if encounter_col:
+                    sql = f"SELECT {cols_str} FROM {table_name} WHERE {encounter_col} = :encounter_id"
+                    params = {"encounter_id": encounter_id}
+                else:
+                    # 如果該表沒有就醫序號，尋找關聯欄位 (Fallback) 以支援「解法三」的主從表 JOIN
+                    fk_col = None
+                    # 尋找像是 RECORD_POID 這樣的外部鍵
+                    for candidate in ["RECORD_POID", "RECORDPOID", "POID_REF", "MASTER_ID", "PARENT_ID"]:
+                        if candidate in all_db_cols:
+                            fk_col = candidate
+                            break
+                    
+                    if fk_col:
+                        # 嘗試猜測主表名稱 (通常是去掉 _DETAIL, _LOG 等後綴，或使用 RECORD)
+                        parent_table = table_name.split('_')[0] if '_' in table_name else "RECORD"
+                        # 許多系統的主表主鍵名稱為 POID 或 ID，這裡假設為 POID，並透過子查詢達成 JOIN 效果
+                        sql = f"SELECT {cols_str} FROM {table_name} WHERE {fk_col} IN (SELECT POID FROM {parent_table} WHERE ENCOUNTER_ID = :encounter_id)"
+                        params = {"encounter_id": encounter_id}
+                        print(f"⚠️ 提示: 表格 {table_name} 無就醫序號欄位，嘗試使用關聯查詢: {sql}")
+                    else:
+                        print(f"❌ 錯誤: 資料表 {table_name} 中找不到 ENCOUNTER_ID 或已知的關聯欄位，跳過此表以防報錯。")
+                        continue
                 
                 # 如果存在時間過濾，添加時間條件
                 if time_column:

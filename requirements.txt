@@ -38,3 +38,7 @@ openai
 # ============================================
 streamlit
 bcrypt
+# 新增的依賴
+pypdf
+python-docx
+chromadb

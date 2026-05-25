@@ -49,6 +49,48 @@ FALLBACK_CONFIG = {
     "retry_delay": 2,  # 秒
 }
 
+# ============================================================
+# YOLOv8 OCR 配置
+# ============================================================
+
+# YOLOv8 OCR 全局配置
+YOLOV8_OCR_CONFIG = {
+    "enabled": False,              # 默認禁用（節省資源）
+    "auto_download": True,         # 首次使用時自動下載模型
+    "confidence_threshold": 0.5,   # 識別置信度 (0-1)
+    "device": "cpu",               # 運行設備: 'cpu' 或 'cuda' 或 'mps'
+    "model_size": "nano",          # 模型大小: 'nano' (6MB) 或 'small' (27MB)
+    "cache_enabled": True,         # 是否快取模型到內存
+    "language": "ch",              # OCR 語言: 'ch' (中文), 'en' (英文), 'auto' (自動)
+}
+
+# YOLOv8 模型規格參考
+YOLOV8_MODEL_SPECS = {
+    "nano": {
+        "model_name": "yolov8n.pt",
+        "size_mb": 6.3,
+        "inference_speed_fps": "80-120",  # FPS
+        "latency_ms": "8-12",             # 毫秒
+        "vram_required": "100-200 MB",
+        "suitable_for": "快速 OCR、邊界檢測、實時推理",
+    },
+    "small": {
+        "model_name": "yolov8s.pt",
+        "size_mb": 22.5,
+        "inference_speed_fps": "30-50",
+        "latency_ms": "20-30",
+        "vram_required": "500-800 MB",
+        "suitable_for": "高精度 OCR、精細檢測",
+    }
+}
+
+# YOLOv8 模型路徑配置
+YOLOV8_PATHS = {
+    "models_dir": "local_data/models",
+    "metadata_file": "local_data/models/yolov8_metadata.json",
+    "cache_dir": "local_data/.yolov8_cache",
+}
+
 # 監控與日誌
 MONITORING_CONFIG = {
     "log_model_selection": True,

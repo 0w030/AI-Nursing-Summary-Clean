@@ -187,6 +187,9 @@
 
 import os
 import re
+import json
+import base64
+import requests
 import streamlit as st
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -473,3 +476,117 @@ def _call_groq_model(system_prompt: str, data_text: str, encounter_id: str) -> s
     except Exception as e:
         print(f"❌ Groq API 錯誤: {e}")
         return f"AI 生成失敗: {e}"
+
+
+# ============================================================================
+# 🆕 Phase 1: OCR 文本智能清理函數 - 使用 LLM 修正文本並轉換為 JSON
+# ============================================================================
+
+
+def recognize_image_with_llama_scout(image_base64: str, image_format: str = "png") -> tuple:
+    """
+    使用 Groq 識別醫療表格/護理記錄圖片中的文本
+    
+    Args:
+        image_base64 (str): Base64 編碼的圖片數據
+        image_format (str): 圖片格式 ("jpeg", "png", "jpg")
+    
+    Returns:
+        (recognized_text, error_msg): 
+        - recognized_text: 識別結果的可讀文本
+        - error_msg: 錯誤訊息(若失敗則為 None)
+    """
+    
+    # 規範化圖片格式
+    image_format = image_format.lower().strip('.')
+    if image_format in ('jpg', 'jpeg'):
+        mime_type = "image/jpeg"
+    elif image_format == 'png':
+        mime_type = "image/png"
+    else:
+        mime_type = "image/jpeg"
+    
+    # ===== System Prompt =====
+    system_prompt = """你是一位專業的醫療報告文本識別專家。你的任務是從醫療表格、護理記錄、掃描圖片中精確識別並提取所有文本內容。
+
+【關鍵要求】
+1. 【完整性】務必識別和提取圖片中的「所有可見文字」，不能遺漏任何部分
+2. 【準確性】確保每個字詞、數值、日期都完全正確
+3. 【格式化】將提取的內容整理為清晰易讀的結構化格式
+4. 【禁止】不要添加、推測或改寫原文沒有的內容
+5. 【長度】即使文本很長（100字以上），也要完整輸出，不能截斷
+6.請完全使用繁體中文
+
+【輸出格式示例】
+【患者基本訊息】
+姓名: XXX
+年齡: XX
+性別: X
+日期: XXXX-XX-XX
+
+【生命體徵】
+體溫: XX.X°C
+血壓: XXX/XX mmHg
+脈搏: XX bpm
+
+【主訴】
+XXXX（完整描述）
+
+【檢查所見】
+XXXX（完整描述）
+
+【醫囑/治療】
+XXXX（完整描述）"""
+
+    user_prompt = """請非常仔細地識別下面醫療表格/護理記錄圖片中的所有文字內容，並完整提取。
+    
+重要提醒：
+- 請確保提取「所有文字」，即使很多也要完整輸出
+- 不要截斷或遺漏任何文本
+- 以結構化格式組織內容，直接輸出即可"""
+    
+    print("\n" + "🔵" + "="*50)
+    print("📸 圖片識別中...")
+    print("="*50)
+    
+    try:
+        client = OpenAI(
+            api_key=os.getenv("GROQ_API_KEY"),
+            base_url="https://api.groq.com/openai/v1"
+        )
+        
+        response = client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": user_prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{image_base64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            temperature=1,
+            max_tokens=1024,
+        )
+        
+        recognized_text = response.choices[0].message.content.strip()
+        print("✅ 圖片識別成功")
+        return recognized_text, None
+        
+    except Exception as e:
+        error_msg = f"圖片識別失敗: {str(e)[:100]}"
+        print(f"❌ {error_msg}")
+        return None, error_msg

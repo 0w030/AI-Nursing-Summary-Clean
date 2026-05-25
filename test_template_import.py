@@ -1,5 +1,6 @@
 """
 模板導入功能測試腳本 - 單個模板導入和圖片 OCR
+包含 YOLOv8 + PaddleOCR 集成測試
 """
 
 import sys
@@ -9,14 +10,23 @@ from PIL import Image, ImageDraw, ImageFont
 
 sys.path.insert(0, 'c:/AI-Nursing-Summary-Clean/AI-Nursing-Summary-Clean')
 
-from db.template_service import extract_text_from_image, extract_text_from_pdf, extract_text_from_docx, extract_text_from_txt, create_template, get_all_templates
+from db.template_service import (
+    extract_text_from_image, 
+    extract_text_from_image_yolov8,
+    extract_text_from_image_easyocr,
+    extract_text_from_pdf, 
+    extract_text_from_docx, 
+    extract_text_from_txt, 
+    create_template, 
+    get_all_templates
+)
 
 print("=" * 60)
 print("模板導入功能測試")
 print("=" * 60)
 
 # 測試 1: 創建文本圖片並進行 OCR
-print("\n【測試 1】圖片 OCR 識別測試")
+print("\n【測試 1】圖片 OCR 識別測試（EasyOCR）")
 print("-" * 60)
 
 try:
@@ -45,19 +55,59 @@ try:
     img.save(img_byte_arr, format='PNG')
     img_byte_arr.seek(0)
     
-    # 測試 OCR
-    extracted_text, error = extract_text_from_image(img_byte_arr)
+    # 測試 EasyOCR（預設）
+    extracted_text, error = extract_text_from_image(img_byte_arr, use_yolov8=False)
     
     if error:
         print(f"⚠️ 警告：{error}")
         print("   （初次運行 EasyOCR 需要下載模型，可能需要數分鐘）")
     else:
-        print(f"✅ OCR 識別成功")
+        print(f"✅ EasyOCR 識別成功")
         print(f"   識別文字：{extracted_text}")
 
 except Exception as e:
     print(f"❌ 錯誤：{str(e)}")
     print("   請確保已安裝 easyocr 和 pillow")
+
+
+# 測試 1.5: YOLOv8 + PaddleOCR 識別測試
+print("\n【測試 1.5】圖片 OCR 識別測試（YOLOv8 + PaddleOCR）")
+print("-" * 60)
+
+try:
+    # 重新建立圖片用於 YOLOv8 測試
+    img = Image.new('RGB', (400, 100), color='white')
+    d = ImageDraw.Draw(img)
+    
+    try:
+        font = ImageFont.truetype('C:\\\\Windows\\\\Fonts\\\\SimSun.ttc', 30)
+    except:
+        try:
+            font = ImageFont.truetype('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc', 30)
+        except:
+            font = ImageFont.load_default()
+    
+    test_text = "護理評估結果"
+    d.text((10, 30), test_text, fill='black', font=font)
+    
+    img_byte_arr = BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
+    
+    # 測試 YOLOv8 + PaddleOCR
+    print("⏳ 首次運行 YOLOv8 可能需要下載模型（~30-60 秒）...")
+    extracted_text, error = extract_text_from_image(img_byte_arr, use_yolov8=True)
+    
+    if error:
+        print(f"⚠️ YOLOv8 失敗，已自動降級：{error}")
+    else:
+        print(f"✅ YOLOv8 + PaddleOCR 識別成功")
+        print(f"   識別文字：{extracted_text}")
+
+except Exception as e:
+    print(f"❌ 錯誤：{str(e)}")
+    print("   請確保已安裝 paddleocr 和 ultralytics")
+
 
 # 測試 2: 創建單個模板
 print("\n【測試 2】創建單個模板")

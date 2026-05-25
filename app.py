@@ -4,6 +4,8 @@ import streamlit as st
 import os
 import pandas as pd
 import json
+import base64
+import io
 from dotenv import load_dotenv
 from datetime import datetime, time, timedelta
 # from feedback_component import show_feedback_ui
@@ -14,7 +16,7 @@ from db.template_service import (
     get_all_templates, create_template, update_template,
     parse_uploaded_template
 )
-from ai.ai_summarizer import generate_nursing_summary
+from ai.ai_summarizer import generate_nursing_summary, recognize_image_with_llama_scout
 from db.auth_service import (
     authenticate_user, create_user, user_exists,
     get_all_users, search_users, get_user_count,
@@ -27,6 +29,8 @@ try:
 except Exception as e:
     st.error(f"RAG 服務初始化失敗: {e}")
     rag_service = None
+from db.file_security import perform_security_checks
+
 
 # --- ⚠️ 關鍵新增：在這裡啟動 .env 讀取器 ---
 load_dotenv()
@@ -552,12 +556,9 @@ def render_summary_config():
             st.markdown(summary)
 
 
-# =========================================================================
-# 模板導入相關輔助函數
-# =========================================================================
 def show_single_template_import_form(content):
     """顯示單個模板導入表單"""
-    st.subheader("第 2 步：設定模板信息")
+    st.subheader("設定模板訊息")
     
     with st.container():
         col1, col2 = st.columns(2)
@@ -576,18 +577,21 @@ def show_single_template_import_form(content):
                 help="簡短說明此模板的用途"
             )
     
-    st.subheader("第 2.5 步：編輯模板內容（可選）")
+    st.subheader("編輯模板內容（可選）")
     st.caption("您可以直接編輯從文件中提取的內容，或保持原樣")
     
+    # ✅ 修改：直接使用 value，不依賴 session_state，使用動態 key
+    # 這樣確保每次內容更新時，text_area 都會顯示最新的值
     edited_content = st.text_area(
         "模板內容 (Prompt)",
         value=content,
+        key=f"template_editor_content_{id(content)}",
         height=350,
         help="這是將用於 AI 推理的 System Prompt"
     )
     
     st.divider()
-    st.subheader("第 3 步：確認導入")
+    st.subheader("第 6 步：確認導入")
     
     col_submit, col_cancel = st.columns(2)
     
@@ -598,8 +602,10 @@ def show_single_template_import_form(content):
             elif not edited_content:
                 st.error("❌ 模板內容不能為空！")
             else:
+                content_to_save = edited_content
+                
                 with st.spinner("正在導入模板..."):
-                    success = create_template(template_name, edited_content, template_description)
+                    success = create_template(template_name, content_to_save, template_description)
                 
                 if success:
                     st.success(f"✅ 模板「{template_name}」已成功導入！")
@@ -607,8 +613,8 @@ def show_single_template_import_form(content):
                     st.cache_data.clear()
                     st.session_state.import_extracted_content = ""
                     st.session_state.import_uploaded_file = None
-                    # 自動導向到模板庫
-                    st.session_state.template_tab = TAB_LIBRARY
+                    # 🛡️ 使用臨時標記觸發導向，而不是直接修改由 radio widget 管理的 template_tab
+                    st.session_state.import_success_redirect = True
                     st.rerun()
                 else:
                     st.error("❌ 導入失敗：模板名稱可能已存在或其他錯誤")
@@ -1201,6 +1207,11 @@ else:
         db_templates = get_all_templates()
         template_list = list(db_templates.keys())
 
+        #檢查導入成功標記，若是則改變 tab
+        if st.session_state.get("import_success_redirect", False):
+            st.session_state.template_tab = TAB_LIBRARY
+            st.session_state.import_success_redirect = False
+        
         tab = st.radio(
         "功能頁籤",
         [TAB_LIBRARY, TAB_CREATE, TAB_IMPORT],
@@ -1512,7 +1523,7 @@ else:
         elif st.session_state.template_tab == TAB_IMPORT:
             
             st.markdown("#### 📥 將模板從外部文件導入系統")
-            st.caption("支持從 PDF、Word、Excel、TXT、JSON 等檔案中提取內容並作為模板導入。")
+            st.caption("支持從 PDF、Word、JPG、PNG、TXT等檔案中提取內容並作為模板導入。")
             
             # ===== 初始化 session state =====
             if "import_uploaded_file" not in st.session_state:
@@ -1521,19 +1532,31 @@ else:
                 st.session_state.import_extracted_content = ""
             if "import_file_type" not in st.session_state:
                 st.session_state.import_file_type = None
+            if "llama_scout_result" not in st.session_state:
+                st.session_state.llama_scout_result = None
+            if "llama_scout_used" not in st.session_state:
+                st.session_state.llama_scout_used = False
+            if "import_uploaded_file_bytes" not in st.session_state:
+                st.session_state.import_uploaded_file_bytes = None
+            # ✅ 新增：辨識方法選擇和結果存儲（修復 Bug 1 & Bug 2）
+            if "recognition_method" not in st.session_state:
+                st.session_state.recognition_method = None
+            if "current_recognition_result" not in st.session_state:
+                st.session_state.current_recognition_result = ""
             
             st.subheader("第 1 步：上傳文件")
             
-            # 文件上傳
-            col_upload_text, col_upload_info = st.columns([3, 1])
-            with col_upload_text:
+            # 📤 文件上傳區塊
+            col_upload1, col_upload2 = st.columns([3, 1])
+            
+            with col_upload1:
                 uploaded_file = st.file_uploader(
                     "選擇要上傳的文件 (.pdf, .docx, .txt, .jpg, .png)：",
                     type=['pdf', 'docx', 'txt', 'jpg', 'png']
                 )
             
-            with col_upload_info:
-                st.info("💡 提示：選擇包含模板 Prompt 內容的文件")
+            with col_upload2:
+                st.info("💡 提示：支持多種格式")
             
             # 文件處理邏輯
             if uploaded_file is not None:
@@ -1546,6 +1569,8 @@ else:
                     'docx': 'docx',
                     'txt': 'txt',
                     'jpg': 'image',
+                    'jpeg': 'image',
+                    'jpe': 'image',
                     'png': 'image'
                 }
                 
@@ -1554,27 +1579,178 @@ else:
                 if file_type is None:
                     st.error(f"❌ 不支持的文件類型：{file_ext}")
                 else:
-                    # 顯示上傳成功信息
-                    st.success(f"✅ 文件已上傳：{file_name} ({file_ext.upper()})")
+                    # 🛡️ 第一步：讀取檔案字節（用於安全檢查）
+                    file_bytes = uploaded_file.read()
                     
-                    # 提取文件內容
-                    with st.spinner("正在提取文件內容..."):
-                        extracted_content, error_msg = parse_uploaded_template(uploaded_file, file_type)
+                    # 🛡️ 第二步：執行安全檢查（Magic Number + 大小檢查 + 路徑消毒 + UUID 重新命名）
+                    security_pass, security_error, safe_filename = perform_security_checks(
+                        file_bytes,
+                        file_name,
+                        file_type
+                    )
                     
-                    if error_msg:
-                        st.error(f"❌ 提取失敗：{error_msg}")
+                    if not security_pass:
+                        st.error(f"❌ 安全檢查失敗：{security_error}")
+                        st.info("💡 如果問題持續，請檢查檔案格式和大小。")
                     else:
-                        st.session_state.import_extracted_content = extracted_content
+                        # ✅ 檔案通過安全檢查
+                        st.success(f"✅ 文件已上傳並通過安全檢查：{safe_filename}")
+                        
+                        # 先保存文件字節（在解析前，避免指針被消耗）
+                        st.session_state.import_uploaded_file_bytes = file_bytes
                         st.session_state.import_file_type = file_type
-                        st.session_state.import_uploaded_file = file_name
+                        st.session_state.import_uploaded_file = safe_filename  # 🛡️ 使用安全檔名
+                        st.session_state.import_original_filename = file_name  # 保存原始檔名供參考
+                        
+                        # 重置文件指針以供 parse_uploaded_template 使用
+                        uploaded_file.seek(0)
                         
                         st.divider()
                         
-                        # 預覽提取的內容
-                        st.subheader("第 2 步：預覽與編輯提取的內容")
+                        # ============================================================
+                        # 第 2 步：選擇辨識方式（三個獨立選項）
+                        # ============================================================
+                        st.subheader("第 2 步：選擇辨識方式")
+                        st.markdown("請選擇適合的文本識別方法，然後點擊「開始分析」執行：")
                         
-                        # 作為單個模板導入
-                        show_single_template_import_form(extracted_content)
+                        # 🟢 三個按鈕：EasyOCR、YOLOv8、圖片辨識
+                        col_btn1, col_btn2, col_btn3 = st.columns(3)
+                        
+                        with col_btn1:
+                            if st.button("EasyOCR", use_container_width=True, help="快速 OCR，適合清晰圖像"):
+                                st.session_state.recognition_method = "easyocr"
+                                st.session_state.current_recognition_result = ""  # ✅ 清除舊結果
+                                st.rerun()
+                        
+                        with col_btn2:
+                            if st.button("YOLOv8+paddleOCR", use_container_width=True, help="高精度識別，適合掃描/低質量圖像"):
+                               st.session_state.recognition_method = "yolov8"
+                               st.session_state.current_recognition_result = ""  # ✅ 清除舊結果
+                               st.rerun()
+                    
+                    with col_btn3:
+                        if st.button("圖片辨識 (AI)", use_container_width=True, help="使用 Groq 智能識別"):
+                            st.session_state.recognition_method = "groq"
+                            st.session_state.current_recognition_result = ""  # ✅ 清除舊結果
+                            st.rerun()
+                    
+                    # 顯示當前選擇
+                    if st.session_state.recognition_method:
+                        method_display = {
+                            "easyocr": "EasyOCR (快速 OCR)",
+                            "yolov8": "YOLOv8+paddleOCR (高精度)",
+                            "groq": "Groq AI (智能識別)"
+                        }
+                        st.info(f"✅ 已選擇：{method_display.get(st.session_state.recognition_method, '未知')}")
+                    
+                    # ============================================================
+                    # 第 3 步：開始分析按鈕
+                    # ============================================================
+                    st.subheader("第 3 步：執行分析")
+                    
+                    # 🔵 統一的「開始分析」按鈕（不受任何 checkbox 影響）
+                    col_analyze, col_warning = st.columns([2, 2])
+                    
+                    with col_analyze:
+                        if st.button("▶️ 開始分析", type="primary", use_container_width=True, key="start_analysis_btn"):
+                            if not st.session_state.recognition_method:
+                                st.error("❌ 請先選擇一種辨識方式")
+                            else:
+                                # 清空舊結果（避免顯示舊資料）
+                                st.session_state.current_recognition_result = ""
+                                st.session_state.llama_scout_result = None
+                                st.session_state.import_extracted_content = ""
+                                
+                                # 根據選擇執行對應的辨識引擎
+                                method = st.session_state.recognition_method
+                                
+                                with st.spinner(f"🔄 正在使用 {['EasyOCR', 'YOLOv8', 'Groq AI'][['easyocr', 'yolov8', 'groq'].index(method)]} 進行分析..."):
+                                    try:
+                                        if method == "easyocr" or method == "yolov8":
+                                            # EasyOCR 和 YOLOv8 都使用 parse_uploaded_template（使用 use_yolov8 參數區分）
+                                            uploaded_file_for_parsing = st.session_state.get("import_uploaded_file_bytes")
+                                            
+                                            # 需要重新創建 file-like 對象
+                                            file_like = io.BytesIO(uploaded_file_for_parsing)
+                                            
+                                            use_yolov8_flag = (method == "yolov8")
+                                            extracted_content, error_msg = parse_uploaded_template(
+                                                file_like, 
+                                                file_type, 
+                                                use_yolov8=use_yolov8_flag
+                                            )
+                                            
+                                            if error_msg:
+                                                st.error(f"❌ {method.upper()} 識別失敗：{error_msg}")
+                                            else:
+                                                st.session_state.current_recognition_result = extracted_content
+                                                st.session_state.import_extracted_content = extracted_content
+                                                st.success(f"✅ {method.upper()} 識別成功！")
+                                        
+                                        elif method == "groq":
+                                            # 圖片辨識（Groq）
+                                            if file_type != "image":
+                                                st.error("❌ Groq AI 圖片辨識只支持圖片文件（jpg, png）")
+                                            else:
+                                                image_bytes = st.session_state.get("import_uploaded_file_bytes")
+                                                image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+                                                file_ext_for_groq = st.session_state.get("import_uploaded_file", "").split('.')[-1].lower()
+                                                
+                                                recognized_text, error_msg = recognize_image_with_llama_scout(
+                                                    image_b64, 
+                                                    image_format=file_ext_for_groq
+                                                )
+                                                
+                                                if error_msg:
+                                                    st.error(f"❌ Groq 識別失敗：{error_msg}")
+                                                else:
+                                                    st.session_state.current_recognition_result = recognized_text
+                                                    st.session_state.llama_scout_result = recognized_text
+                                                    st.success("✅ Groq AI 識別成功！")
+                                    
+                                    except Exception as e:
+                                        st.error(f"❌ 分析過程出錯：{str(e)}")
+                                
+                                # 強制重新渲染以更新結果
+                                st.rerun()
+                    
+                    with col_warning:
+                        st.info("💡 選擇方式後點擊此按鈕執行")
+                    
+                    # ============================================================
+                    # 第 4 步：顯示結果
+                    # ============================================================
+                    if st.session_state.current_recognition_result:
+                        st.divider()
+                        st.subheader("第 4 步：預覽與編輯結果")
+                        
+                        # 顯示當前使用的引擎
+                        method_name = {
+                            "easyocr": "🔤 EasyOCR",
+                            "yolov8": "🤖 YOLOv8",
+                            "groq": "🔍 Groq AI"
+                        }
+                        st.info(f"📊 當前識別結果來自：{method_name.get(st.session_state.recognition_method, '未知')}")
+                        
+                        # 直接顯示結果（不經過 session_state 中間層）
+                        final_result = st.session_state.current_recognition_result
+                        
+                        # ✅ 使用動態 key 防止 Streamlit widget 狀態混亂
+                        edited_final_content = st.text_area(
+                            "辨識結果（可編輯）",
+                            value=final_result,
+                            key=f"final_recognition_result_{id(final_result)}",
+                            height=350
+                        )
+                        
+                        # 將編輯後的內容保存到 session_state，以便導入時使用
+                        st.session_state.current_recognition_result = edited_final_content
+                        
+                        st.divider()
+                        st.subheader("第 5 步：導入為模板")
+                        
+                        # 調用模板導入函數，傳入當前的識別結果
+                        show_single_template_import_form(edited_final_content)
             else:
                 st.info("🔹 請上傳文件開始使用")
 

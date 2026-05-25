@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class RAGService:
-    def __init__(self, db_path="./local_data/chroma_db"):
+    def __init__(self, db_path="./local_data/chroma_db", min_distance_threshold: float = None):
         # 確保儲存向量資料庫的目錄存在
         os.makedirs(db_path, exist_ok=True)
         # 初始化本地向量庫
@@ -16,6 +16,15 @@ class RAGService:
         # 取得 Ollama URL
         self.ollama_url = os.getenv("OLLAMA_API_URL", "http://localhost:11434")
         self.embed_url = f"{self.ollama_url}/api/embeddings"
+
+        # 相似度門檻：距離越小代表越相似
+        if min_distance_threshold is not None:
+            self.min_distance_threshold = min_distance_threshold
+        else:
+            try:
+                self.min_distance_threshold = float(os.getenv("RAG_DISTANCE_THRESHOLD", "2.0"))
+            except ValueError:
+                self.min_distance_threshold = 2.0
         
     def _get_embedding(self, text: str) -> list:
         """呼叫 Ollama 將文字轉為向量"""
@@ -66,12 +75,22 @@ class RAGService:
             n_results=min(top_k, self.collection.count())
         )
         
-        if not results['documents'] or not results['documents'][0]:
+        if not results.get('documents') or not results['documents'][0]:
+            return ""
+
+        distances = results.get('distances', [[]])[0] or []
+        filtered_docs = []
+        for doc, dist in zip(results['documents'][0], distances):
+            if dist <= self.min_distance_threshold:
+                filtered_docs.append(doc)
+
+        if not filtered_docs:
+            print(f"⚠️ RAG: 未達相似度門檻 ({self.min_distance_threshold})，不使用歷史範例。")
             return ""
             
         # 組裝成範例字串
         examples_text = "【以下是過去類似病歷的優良摘要範例，請參考其專業用語與重點提取方式】\n"
-        for i, doc in enumerate(results['documents'][0]):
+        for i, doc in enumerate(filtered_docs):
             examples_text += f"範例 {i+1}:\n{doc}\n---\n"
             
         return examples_text

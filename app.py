@@ -170,7 +170,7 @@ def create_test_patient_payload(row_dict: dict):
 
 
 def load_test_patient_list_dynamic(table_name: str = None):
-    """從當前活動連線動態載入前 10 筆病患測試資料。"""
+    """從當前活動連線動態載入病患測試資料。"""
     active_connection = config_manager.get_active_connection()
     if not active_connection:
         return []
@@ -226,7 +226,7 @@ def load_test_patient_list_dynamic(table_name: str = None):
                 return []
             dsn = oracledb.makedsn(host, port, service_name=database)
             conn = oracledb.connect(user=user, password=password, dsn=dsn)
-            query = f"SELECT * FROM {table_name} WHERE ROWNUM <= 10"
+            query = f"SELECT * FROM {table_name}"
         elif db_type in ["postgresql", "postgres"]:
             try:
                 import psycopg2
@@ -240,11 +240,11 @@ def load_test_patient_list_dynamic(table_name: str = None):
                 user=user,
                 password=password
             )
-            query = f"SELECT * FROM {table_name} LIMIT 10"
+            query = f"SELECT * FROM {table_name}"
         elif db_type == "sqlite":
             import sqlite3
             conn = sqlite3.connect(database)
-            query = f"SELECT * FROM {table_name} LIMIT 10"
+            query = f"SELECT * FROM {table_name}"
         else:
             st.error(f"尚未支援的資料庫類型：{active_connection.db_type}")
             return []
@@ -554,7 +554,7 @@ def render_summary_config():
     st.subheader("AI 模型設定")
     model_options = {
         "auto": "自動 (優先使用本地模型，若失敗則使用雲端模型)",
-        "local": "本地模型 (Ollama - Mistral 等)",
+        "local": "本地模型 (Ollama - llama3.1 等)",
         "groq": "雲端模型 (Groq - LLaMA 3 等)"
     }
     selected_model_key = st.selectbox(
@@ -611,7 +611,8 @@ def render_summary_config():
                         rag_service.add_memory(
                             encounter_id=st.session_state.selected_patient['就醫序號'],
                             raw_data=st.session_state.last_patient_data,
-                            final_summary=st.session_state.last_generated_summary
+                            final_summary=st.session_state.last_generated_summary,
+                            model_source=selected_model_key
                         )
                     st.success("✅ 已成功存入知識庫！未來的相似案例將會參考此寫作風格。")
             else:

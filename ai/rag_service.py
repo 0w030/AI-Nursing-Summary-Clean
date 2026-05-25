@@ -33,7 +33,7 @@ class RAGService:
             print(f"⚠️ 無法取得 Embedding: {e}")
             return []
 
-    def add_memory(self, encounter_id: str, raw_data: str, final_summary: str):
+    def add_memory(self, encounter_id: str, raw_data: str, final_summary: str, model_source: str = "unknown"):
         """將護理師確認後的「完美摘要」存入記憶"""
         vector = self._get_embedding(raw_data)
         if not vector:
@@ -43,10 +43,14 @@ class RAGService:
         self.collection.add(
             embeddings=[vector],
             documents=[final_summary], # 這是 AI 要參考的標準答案
-            metadatas=[{"raw_data": raw_data, "encounter_id": encounter_id}],
+            metadatas=[{
+                "raw_data": raw_data,
+                "encounter_id": encounter_id,
+                "model_source": model_source
+            }],
             ids=[f"summary_{encounter_id}"]
         )
-        print(f"✅ 已將就醫序號 {encounter_id} 的摘要存入 RAG 記憶庫。")
+        print(f"✅ 已將就醫序號 {encounter_id} 的摘要存入 RAG 記憶庫。 (來源: {model_source})")
 
     def retrieve_similar_cases(self, current_raw_data: str, top_k: int = 2) -> str:
         """找出最相似的過去案例"""

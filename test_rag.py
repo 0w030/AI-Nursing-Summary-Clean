@@ -13,7 +13,8 @@ def test_rag():
         rag.add_memory(
             encounter_id="TEST_001",
             raw_data="病患主訴頭痛，血壓 140/90，體溫 38度。有咳嗽症狀。",
-            final_summary="病患因頭痛及發燒(38度)就診，伴隨咳嗽，血壓偏高(140/90)。建議持續觀察體溫變化並給予退燒藥物。"
+            final_summary="病患因頭痛及發燒(38度)就診，伴隨咳嗽，血壓偏高(140/90)。建議持續觀察體溫變化並給予退燒藥物。",
+            model_source="groq"
         )
         print(f"寫入後資料庫共有 {rag.collection.count()} 筆記憶。")
     

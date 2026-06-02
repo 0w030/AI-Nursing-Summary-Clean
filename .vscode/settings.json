@@ -50,6 +50,16 @@
             "database": "railway",
             "username": "postgres",
             "name": "123321"
+        },
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "turntable.proxy.rlwy.net",
+            "port": 27973,
+            "driver": "PostgreSQL",
+            "database": "railway",
+            "username": "postgres",
+            "name": "1234543"
         }
     ],
     "chat.tools.terminal.autoApprove": {

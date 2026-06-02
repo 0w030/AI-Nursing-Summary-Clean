@@ -49,9 +49,9 @@
 #         print("❌ 連線失敗。")
 #         print("請檢查您的 Streamlit Secrets 設定")
 
-import os
-import psycopg2
-from dotenv import load_dotenv
+# import os
+# import psycopg2
+# from dotenv import load_dotenv
 
 # 讀取 .env 檔案中的環境變數
 # load_dotenv()

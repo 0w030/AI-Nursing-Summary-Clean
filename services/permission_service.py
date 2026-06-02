@@ -14,6 +14,7 @@ class Role(Enum):
     """用戶角色枚舉"""
     ADMIN = "admin"              # 管理員 - 完全權限
     MANAGER = "manager"          # 經理 - 可管理連接和映射
+    USER = "user"                # 一般使用者 - 摘要生成權限
     VIEWER = "viewer"            # 查看者 - 只讀權限
     GUEST = "guest"              # 訪客 - 基礎查看權限
 
@@ -34,6 +35,13 @@ class Permission(Enum):
     AI_SUGGEST_MAPPINGS = "ai_suggest_mappings"
     CONFIRM_MAPPINGS = "confirm_mappings"
     RESET_MAPPINGS = "reset_mappings"
+    
+    # 模板管理
+    VIEW_TEMPLATES = "view_templates"
+    CREATE_TEMPLATES = "create_templates"
+    EDIT_TEMPLATES = "edit_templates"
+    EXPORT_TEMPLATES = "export_templates"
+    IMPORT_TEMPLATES = "import_templates"
     
     # 日誌
     VIEW_LOGS = "view_logs"
@@ -80,6 +88,18 @@ ROLE_PERMISSIONS: dict = {
         Permission.CONFIRM_MAPPINGS,
         
         Permission.VIEW_LOGS,
+    ],
+    
+    Role.USER: [
+        Permission.VIEW_CONNECTIONS,
+        Permission.VIEW_MAPPINGS,
+        Permission.VIEW_LOGS,
+        Permission.VIEW_TEMPLATES,
+        Permission.CREATE_TEMPLATES,
+        Permission.EDIT_TEMPLATES,
+        Permission.VIEW_TEMPLATES,
+        Permission.CREATE_TEMPLATES,
+        Permission.EDIT_TEMPLATES,
     ],
     
     Role.VIEWER: [

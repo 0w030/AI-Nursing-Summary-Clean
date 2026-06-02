@@ -28,6 +28,19 @@ except Exception as e:
     st.error(f"RAG 服務初始化失敗: {e}")
     rag_service = None
 
+# --- 安全的角色轉換函數 ---
+def safe_role_conversion(role_string: str) -> Role:
+    """
+    安全地將字符串轉換為 Role enum。
+    如果角色無效，返回默認角色 GUEST。
+    """
+    try:
+        return Role(role_string)
+    except ValueError:
+        # 日誌警告並返回默認角色
+        print(f"⚠️ 無效的角色值: {role_string}，使用默認角色 'guest'")
+        return Role.GUEST
+
 # --- ⚠️ 關鍵新增：在這裡啟動 .env 讀取器 ---
 load_dotenv()
 
@@ -70,6 +83,15 @@ if "patient_search_keyword" not in st.session_state:
 
 if "patient_search_requested" not in st.session_state:
     st.session_state.patient_search_requested = False
+
+if "last_generated_summary" not in st.session_state:
+    st.session_state.last_generated_summary = None
+
+if "last_patient_data" not in st.session_state:
+    st.session_state.last_patient_data = None
+
+if "last_debug_trace" not in st.session_state:
+    st.session_state.last_debug_trace = None
 
 # ===== 全域預設（避免 NameError）=====
 selected_info = None
@@ -170,6 +192,144 @@ def create_test_patient_payload(row_dict: dict):
 
 
 def load_test_patient_list_dynamic(table_name: str = None):
+    """從當前活動連線動態載入病患測試資料。"""
+    active_connection = config_manager.get_active_connection()
+    if not active_connection:
+        return []
+
+    mappings = config_manager.get_connection_mappings(active_connection.name)
+    if not mappings:
+        st.error("請先至「管理中控台」進行 Schema 同步，目前沒有可用的資料表。")
+        return []
+
+    if not table_name:
+        if "RECORD" in mappings:
+            table_name = "RECORD"
+        elif "record" in mappings:
+            table_name = "record"
+        elif "NISHBED" in mappings:
+            table_name = "NISHBED"
+        elif "nishbed" in mappings:
+            table_name = "nishbed"
+        else:
+            best_table = None
+            backup_table = None
+            for t_name, fields in mappings.items():
+                col_names = [f.db_column_name.upper() for f in fields]
+                has_pid = any(c in col_names for c in ["PATIENT_ID", "PATID", "PID", "PATIENTID", "PERSON_ID", "HHISNUM"])
+                has_eid = any(c in col_names for c in ["ENCOUNTER_ID", "ENCOUNTERID", "VISIT_ID", "VISITID", "ADMISSION_ID", "HCASENO"])
+                has_name = any(c in col_names for c in ["NAME", "PAT_NAME", "FULL_NAME", "PATIENT_NAME", "CUSTOMER_NAME", "HNAMEC"])
+                
+                if has_pid and has_eid and has_name:
+                    best_table = t_name
+                    break
+                elif has_pid and has_eid and not backup_table:
+                    backup_table = t_name
+                elif has_pid and not backup_table:
+                    backup_table = t_name
+                    
+            table_name = best_table if best_table else (backup_table if backup_table else list(mappings.keys())[0])
+
+    db_type = (active_connection.db_type or "").lower()
+    host = active_connection.host
+    port = active_connection.port
+    database = active_connection.database
+    user = active_connection.username
+    password = active_connection.password
+
+    conn = None
+    cursor = None
+    try:
+        if db_type == "oracle":
+            try:
+                import oracledb
+            except ImportError:
+                st.error("Oracle 驅動尚未安裝，無法連接 Oracle 資料庫。")
+                return []
+            dsn = oracledb.makedsn(host, port, service_name=database)
+            conn = oracledb.connect(user=user, password=password, dsn=dsn)
+            query = f"SELECT * FROM {table_name}"
+        elif db_type in ["postgresql", "postgres"]:
+            try:
+                import psycopg2
+            except ImportError:
+                st.error("PostgreSQL 驅動尚未安裝，無法連接 PostgreSQL 資料庫。")
+                return []
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                dbname=database,
+                user=user,
+                password=password
+            )
+            query = f"SELECT * FROM {table_name}"
+        elif db_type == "sqlite":
+            import sqlite3
+            conn = sqlite3.connect(database)
+            query = f"SELECT * FROM {table_name}"
+        else:
+            st.error(f"尚未支援的資料庫類型：{active_connection.db_type}")
+            return []
+
+        cursor = conn.cursor()
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        columns = [col[0] for col in cursor.description] if cursor.description else []
+
+        # 導入分組邏輯：以 (patient_id, encounter_id) 為 Key 聚合資料
+        grouped_patients = {}
+        for row in rows:
+            row_dict = dict(zip(columns, row))
+            payload = create_test_patient_payload(row_dict)
+            
+            patient_id = payload.get("病歷號")
+            encounter_id = payload.get("就醫序號")
+            key = (patient_id, encounter_id)
+            
+            if key not in grouped_patients:
+                # 第一次遇到該組合，直接存入
+                grouped_patients[key] = payload
+            else:
+                # 若已存在，進行資料聚合
+                # a. 累加筆數
+                grouped_patients[key]["資料筆數"] += payload.get("資料筆數", 1)
+                
+                # b. 更新時間邊界
+                earliest_time = min(grouped_patients[key]["最早紀錄"], payload["最早紀錄"])
+                latest_time = max(grouped_patients[key]["最晚紀錄"], payload["最晚紀錄"])
+                grouped_patients[key]["最早紀錄"] = earliest_time
+                grouped_patients[key]["最晚紀錄"] = latest_time
+                
+                # c. 同步更新顯示字串
+                grouped_patients[key]["最早紀錄_顯示"] = format_time_str(earliest_time)
+                grouped_patients[key]["最晚紀錄_顯示"] = format_time_str(latest_time)
+
+        # 重構 Label 並轉回 List
+        patient_list = []
+        for patient in grouped_patients.values():
+            pid = patient["病歷號"]
+            eid = patient["就醫序號"]
+            count = patient["資料筆數"]
+            patient["label"] = f"病歷號: {pid} | 就醫序號: {eid} (共 {count} 筆)"
+            patient_list.append(patient)
+
+        return patient_list
+
+    except Exception as error:
+        st.error(f"病患清單載入失敗，請檢查資料庫連線與表格設定。錯誤訊息：{error}")
+        return []
+
+    finally:
+        try:
+            if cursor:
+                cursor.close()
+        except Exception:
+            pass
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
     """從當前活動連線動態載入病患測試資料。"""
     active_connection = config_manager.get_active_connection()
     if not active_connection:
@@ -432,6 +592,21 @@ def render_summary_config():
     
     # 資料來源範圍選擇
     st.subheader("資料來源範圍")
+    
+    # 添加快速選擇選項
+    col_buttons = st.columns([1, 1, 1])
+    with col_buttons[0]:
+        if st.button("選擇所有 AI 建議欄位", help="快速勾選所有被 AI 推薦的欄位"):
+            # 清除所有已有的勾選，再應用新的勾選
+            for table_name, field_mappings in connection_mappings.items():
+                for field_mapping in field_mappings:
+                    if field_mapping.is_ai_suggested:
+                        key = f"chk_{table_name}_{field_mapping.db_column_name}"
+                        if key not in st.session_state:
+                            st.session_state[key] = False
+                        st.session_state[key] = True
+            st.success("已選擇所有 AI 建議欄位")
+    
     selected_queries = {}
     
     for table_name, field_mappings in connection_mappings.items():
@@ -471,9 +646,12 @@ def render_summary_config():
                 else:
                     checkbox_label += " [已確認]"
                 
+                # 預設勾選 AI 建議的欄位
+                default_checked = field_mapping.is_ai_suggested
+                
                 is_checked = cols[i % 3].checkbox(
                     label=checkbox_label,
-                    value=False,
+                    value=default_checked,
                     key=f"chk_{table_name}_{db_col_name}"
                 )
                 
@@ -598,9 +776,110 @@ def render_summary_config():
             st.markdown("---")
             st.markdown(summary)
 
+            # ===== 摘要過程檢查 (Debug/Trace) =====
+            with st.expander("摘要過程檢查 (Debug/Trace)", expanded=False):
+                st.markdown("#### AI 模型來源")
+                model_display_map = {
+                    "auto": "自動 (優先使用本地模型，若失敗則使用雲端模型)",
+                    "local": "本地模型 (Ollama - llama3.1 等)",
+                    "groq": "雲端模型 (Groq - LLaMA 3 等)"
+                }
+                st.info(f"模型來源: **{model_display_map.get(selected_model_key, selected_model_key)}**")
+                
+                st.divider()
+                
+                st.markdown("#### 系統提示詞 (System Prompt)")
+                st.code(st.session_state.preview_prompt, language="text")
+                
+                st.divider()
+                
+                st.markdown("#### 重點關注項目 (Focus Areas)")
+                focus_display = {
+                    "selected_areas": selected_focus_areas if selected_focus_areas else ["(未選擇)"]
+                }
+                st.json(focus_display)
+                
+                st.divider()
+                
+                st.markdown("#### 原始病患資料 (Raw Patient Data)")
+                st.caption("查詢統計資訊")
+                
+                # 計算資料統計
+                nursing_count = len(p_data.get("nursing", []))
+                vitals_count = len(p_data.get("vitals", []))
+                labs_count = len(p_data.get("labs", []))
+                total_records = nursing_count + vitals_count + labs_count
+                
+                # 顯示統計資訊
+                stat_cols = st.columns(4)
+                stat_cols[0].metric("護理紀錄", nursing_count)
+                stat_cols[1].metric("生理監測", vitals_count)
+                stat_cols[2].metric("檢驗結果", labs_count)
+                stat_cols[3].metric("總計", total_records)
+                
+                # 診斷建議
+                if total_records == 0:
+                    st.warning("查詢到的資料為空。可能原因:\n"
+                              "1. 該患者在選定時間範圍內沒有相關紀錄\n"
+                              "2. 未選擇任何資料來源欄位 (請返回上方勾選欄位)\n"
+                              "3. 資料庫連接或映射配置有誤\n"
+                              "\n建議: 點擊上方『選擇所有 AI 建議欄位』按鈕來自動選擇推薦欄位，或手動勾選更多欄位後重新生成。")
+                else:
+                    st.success(f"成功查詢 {total_records} 筆記錄")
+                
+                st.divider()
+                
+                st.markdown("#### 詳細資料內容")
+                if total_records > 0:
+                    st.json(p_data)
+                else:
+                    st.info("暫無資料可顯示")
+                
+                st.divider()
+                
+                st.markdown("#### 複製工具函數 (Copy Payload for External Tools)")
+                st.caption("供開發者使用: 複製以下 JSON 資料到外部工具進行測試 (Postman、Groq Console 等)")
+                
+                payload_for_copy = {
+                    "encounter_id": selected_patient.get("就醫序號") if selected_patient else None,
+                    "model_source": selected_model_key,
+                    "template_name": selected_template_name,
+                    "system_prompt": st.session_state.preview_prompt,
+                    "focus_areas": selected_focus_areas,
+                    "patient_data": p_data,
+                    "generation_timestamp": datetime.now().isoformat()
+                }
+                
+                col_json, col_prompt = st.columns(2)
+                
+                with col_json:
+                    st.markdown("**完整 JSON Payload**")
+                    import json as json_lib
+                    payload_json_str = json_lib.dumps(payload_for_copy, ensure_ascii=False, indent=2)
+                    st.code(payload_json_str, language="json")
+                    if st.button("複製完整 JSON", key="copy_payload_json"):
+                        st.write(payload_json_str)
+                        st.info("使用 Ctrl+C 或 Cmd+C 複製上述文本")
+                
+                with col_prompt:
+                    st.markdown("**系統提示詞 (Prompt Only)**")
+                    st.code(st.session_state.preview_prompt, language="text")
+                    if st.button("複製系統提示詞", key="copy_prompt_text"):
+                        st.write(st.session_state.preview_prompt)
+                        st.info("使用 Ctrl+C 或 Cmd+C 複製上述文本")
+
             # 將生成的結果與原始資料存入 session_state，供按鈕使用
             st.session_state.last_generated_summary = summary
             st.session_state.last_patient_data = p_data
+            st.session_state.last_debug_trace = {
+                "encounter_id": selected_patient.get("就醫序號") if selected_patient else None,
+                "model_source": selected_model_key,
+                "template_name": selected_template_name,
+                "system_prompt": st.session_state.preview_prompt,
+                "focus_areas": selected_focus_areas,
+                "patient_data": p_data,
+                "generation_timestamp": datetime.now().isoformat()
+            }
 
         # 在生成結果外顯示存入知識庫的選項
         if st.session_state.get("last_generated_summary"):
@@ -706,8 +985,8 @@ if not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.session_state.role = user_role
-                # 將字符串角色轉換為 Role 枚舉對象
-                user_role_enum = Role(user_role)
+                # 將字符串角色安全地轉換為 Role 枚舉對象
+                user_role_enum = safe_role_conversion(user_role)
                 st.session_state.user = User(username=username, role=user_role_enum, is_active=True)
                 st.rerun() # 重新整理網頁，進入系統
             else:
@@ -723,9 +1002,17 @@ else:
         st.markdown("---")
         st.subheader("應用導航")
         
+        # 根據權限決定導航選項
+        if st.session_state.role == "admin":
+            page_options = ["主應用", "管理中控台"]
+        elif st.session_state.role == "manager":
+            page_options = ["主應用"]
+        else:
+            page_options = ["主應用"]
+        
         current_page = st.radio(
             "選擇功能",
-            ["主應用", "管理中控台"],
+            page_options,
             label_visibility="collapsed",
             key="app_page_choice",
             index=0  # 預設選擇「主應用」
@@ -736,16 +1023,25 @@ else:
         
         st.markdown("---")
         if st.button("登出", use_container_width=True):
+            # 完全清除所有會話狀態
             st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.session_state.role = ""
             st.session_state.user = None
+            # 清除應用頁面狀態
+            st.session_state.current_app_page = "main"
             st.rerun()
         
         st.divider()
 
         # 🔑 權限分流核心邏輯
         if st.session_state.role == "user":
-            st.info("您目前的權限僅能使用「摘要生成」功能。")
-            app_mode = " 摘要生成器"
+            # User 可以訪問摘要生成和模板設計（但無法匯出/匯入）
+            app_mode = st.radio(
+                "請選擇功能模式：",
+                [" 摘要生成器", " 模板設計師"],
+                index=0
+            )
         elif st.session_state.role == "admin":
             # Admin 可以訪問管理員功能
             app_mode = st.radio(
@@ -1282,6 +1578,12 @@ else:
             # ---------- 匯出模板 ----------
             with st.container():
                 st.markdown("#### 匯出模板")
+                
+                # 檢查匯出權限
+                can_export = st.session_state.role in ["admin", "manager"]
+                
+                if not can_export:
+                    st.warning("⚠️ 您沒有權限使用匯出功能。只有管理員和護理主任可以匯出模板。")
 
                 export_scope = st.radio(
                     "匯出範圍：",

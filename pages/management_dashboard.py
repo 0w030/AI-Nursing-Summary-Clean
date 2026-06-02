@@ -27,6 +27,19 @@ from db.auth_service import authenticate_user
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- 安全的角色轉換函數 ---
+def safe_role_conversion(role_string: str) -> Role:
+    """
+    安全地將字符串轉換為 Role enum。
+    如果角色無效，返回默認角色 GUEST。
+    """
+    try:
+        return Role(role_string)
+    except ValueError:
+        # 日誌警告並返回默認角色
+        print(f"⚠️ 無效的角色值: {role_string}，使用默認角色 'guest'")
+        return Role.GUEST
+
 # ===================== Streamlit 配置 =====================
 
 st.set_page_config(
@@ -95,9 +108,10 @@ if "current_app_page" not in st.session_state:
 # 若從 app.py 來到管理中控台，將 username/role 轉成 User 物件
 if st.session_state.logged_in and st.session_state.user is None:
     if st.session_state.username and st.session_state.role:
+        user_role_enum = safe_role_conversion(st.session_state.role)
         st.session_state.user = User(
             username=st.session_state.username,
-            role=st.session_state.role,
+            role=user_role_enum,
             is_active=True
         )
 
@@ -178,8 +192,12 @@ def show_dashboard():
     
     with col3:
         if st.button("登出", key="logout_btn_header", use_container_width=True):
+            # 完全清除所有會話狀態
             st.session_state.user = None
             st.session_state.logged_in = False
+            st.session_state.username = ""
+            st.session_state.role = ""
+            st.session_state.current_app_page = "main"
             st.rerun()
     
     st.markdown("---")
@@ -1119,8 +1137,12 @@ def main():
             st.divider()
             
             if st.button("登出", key="logout_btn_sidebar", use_container_width=True):
+                # 完全清除所有會話狀態
                 st.session_state.user = None
                 st.session_state.logged_in = False
+                st.session_state.username = ""
+                st.session_state.role = ""
+                st.session_state.current_app_page = "main"
                 st.rerun()
         
         # 顯示選定頁面
